@@ -1,0 +1,11 @@
+{
+  "name": "bedrock-chat-with-document",
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "deploy": "pnpm --filter backend run deploy"
+  },
+  "devDependencies": {
+    "typescript": "5.7.2"
+  }
+}
