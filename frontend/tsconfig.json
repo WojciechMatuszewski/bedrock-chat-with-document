@@ -26,6 +26,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
+    "postcss.config.js",
     "eslint.config.js"
   ],
   "exclude": ["node_modules"]

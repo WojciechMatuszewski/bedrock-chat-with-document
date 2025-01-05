@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "deploy": "cdk deploy '*'",
-    "lint": "DEBUG=eslint:eslint eslint ."
+    "lint": "eslint ."
   },
   "dependencies": {
     "aws-cdk": "2.173.4",
