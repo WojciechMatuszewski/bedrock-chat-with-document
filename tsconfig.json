@@ -1,3 +1,11 @@
 {
-  "references": [{ "path": "./backend" }]
+  "extends": [
+    "@tsconfig/node22/tsconfig.json",
+    "@tsconfig/strictest/tsconfig.json"
+  ],
+  "compilerOptions": {
+    "allowJs": true,
+    "noEmit": true
+  },
+  "references": [{ "path": "./backend" }, { "path": "./frontend" }]
 }
