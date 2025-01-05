@@ -5,7 +5,8 @@
   "scripts": {
     "deploy": "turbo deploy",
     "lint": "turbo lint",
-    "dev": "turbo dev"
+    "dev": "turbo dev",
+    "bootstrap": "turbo bootstrap"
   },
   "devDependencies": {
     "prettier": "3.4.2",

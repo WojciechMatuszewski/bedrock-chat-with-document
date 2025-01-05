@@ -1,6 +1,8 @@
 {
   "app": "node --experimental-strip-types main.ts",
+  "toolkitStackName": "BedrockChatWithDocumentBootstrap",
   "context": {
+    "@aws-cdk/core:bootstrapQualifier": "bchatdoc",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],

@@ -2,8 +2,9 @@
   "name": "backend",
   "type": "module",
   "scripts": {
-    "deploy": "cdk deploy '*'",
-    "lint": "eslint ."
+    "deploy": "cdk deploy '*' --hotswap-fallback --require-approval=never --no-rollback",
+    "lint": "eslint .",
+    "bootstrap": "cdk bootstrap"
   },
   "dependencies": {
     "aws-cdk": "2.173.4",

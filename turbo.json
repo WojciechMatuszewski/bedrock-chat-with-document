@@ -7,6 +7,14 @@
     },
     "dev": {
       "dependsOn": []
+    },
+    "deploy": {
+      "passThroughEnv": ["AWS_*"],
+      "dependsOn": []
+    },
+    "bootstrap": {
+      "passThroughEnv": ["AWS_*"],
+      "dependsOn": []
     }
   }
 }
