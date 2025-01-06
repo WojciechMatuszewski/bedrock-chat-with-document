@@ -1,5 +1,5 @@
 {
-  "app": "node --experimental-strip-types main.ts",
+  "app": "node --experimental-strip-types --env-file=.env main.ts",
   "toolkitStackName": "BedrockChatWithDocumentBootstrap",
   "context": {
     "@aws-cdk/core:bootstrapQualifier": "bchatdoc",
