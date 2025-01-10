@@ -4,15 +4,19 @@ import {
   App,
   Aspects,
   CfnResource,
+  Duration,
   type IAspect,
   RemovalPolicy,
   Stack,
   type StackProps,
+  aws_apigatewayv2,
   aws_lambda,
   aws_lambda_nodejs,
   aws_s3,
   aws_secretsmanager,
 } from "aws-cdk-lib";
+import { CorsHttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type { IBucket } from "aws-cdk-lib/aws-s3";
 import { Construct, type IConstruct } from "constructs";
 import { fileURLToPath } from "url";
@@ -29,8 +33,10 @@ class AppStack extends Stack {
     });
 
     const knowledgeBase = new BedrockKnowledgeBase(this);
-
-    new BedrockDataSource(this, { bucket: documentsBucket, knowledgeBase });
+    const dataSource = new BedrockDataSource(this, {
+      bucket: documentsBucket,
+      knowledgeBase,
+    });
 
     const getUploadUrlFunction = new LambdaFunction(this, "GetUploadUrl", {
       entry: fileURLToPath(
@@ -39,8 +45,11 @@ class AppStack extends Stack {
       environment: {
         BUCKET_NAME: documentsBucket.bucketName,
       },
+      timeout: Duration.seconds(15),
     });
     documentsBucket.grantPut(getUploadUrlFunction);
+
+    const api = new API(this, { getUploadUrlFunction });
   }
 }
 
@@ -91,6 +100,33 @@ class BedrockDataSource extends genai.bedrock.S3DataSource {
       dataSourceName: "documents",
       knowledgeBase,
       chunkingStrategy: ChunkingStrategy.HIERARCHICAL_TITAN,
+    });
+  }
+}
+
+class API extends aws_apigatewayv2.HttpApi {
+  constructor(
+    scope: Construct,
+    { getUploadUrlFunction }: { getUploadUrlFunction: LambdaFunction },
+  ) {
+    super(scope, "BedrockChatWithDocumentAPI", {
+      corsPreflight: {
+        allowCredentials: false,
+        allowHeaders: ["*"],
+        allowMethods: [CorsHttpMethod.ANY],
+        allowOrigins: ["*"],
+        exposeHeaders: ["Access-Control-Allow-Origin"],
+      },
+      createDefaultStage: true,
+    });
+
+    this.addRoutes({
+      path: "/upload-url",
+      methods: [aws_apigatewayv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration(
+        "GetUploadUrlIntegration",
+        getUploadUrlFunction,
+      ),
     });
   }
 }

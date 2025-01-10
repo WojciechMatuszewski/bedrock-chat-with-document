@@ -45,3 +45,19 @@
     - According to the ChatGPT, the "partial arn" is ARN with region, and account portions omitted.
 
 - I'm baffled by the fact that most Bedrock models (and other models as well) are not available on `eu-west-1` region.
+
+- When working with S3 POST request and parameters on the frontend, **remember that the `file` key has to be the last in the `formData` payload**.
+
+  - AWS ignores all data that appears _after_ the `key` key.
+
+- The `useActionState` is an interesting hook.
+
+  - You have to annotate the file with `use client` to use it, but you can import and pass to it actions from a file annotated with `use server`.
+
+    - I think I'm confusing the `use server` with `server-only` pragma.
+
+      - The `use server` pragma means **"take all exports from this file and turn them into server endpoints"**.
+
+        - This means that they can be used in both client and server contexts BUT they run on the server.
+
+      - The `server only` pragma means **"this file can only be imported in the server context"**.
