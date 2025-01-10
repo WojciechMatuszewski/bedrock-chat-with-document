@@ -61,3 +61,5 @@
         - This means that they can be used in both client and server contexts BUT they run on the server.
 
       - The `server only` pragma means **"this file can only be imported in the server context"**.
+
+TODO: Research JSONata in Step Functions

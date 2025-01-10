@@ -1,3 +1,11 @@
 {
-  "extends": ["@tsconfig/node22", "@tsconfig/strictest"]
+  "extends": [
+    "@tsconfig/node22/tsconfig.json",
+    "@tsconfig/strictest/tsconfig.json"
+  ],
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "emitDeclarationOnly": true,
+    "composite": true
+  }
 }

@@ -26,8 +26,8 @@ const s3Client = new S3Client({});
 const lambdaHandler = async (
   payload: GetObjectUrlPayload,
 ): Promise<GetObjectUrlResponse> => {
-  const uuid = crypto.randomUUID();
-  const key = `${uuid}/data`;
+  const id = crypto.randomUUID();
+  const key = `${id}/data.txt`;
 
   const { url, fields } = await createPresignedPost(s3Client, {
     Bucket: env.BUCKET_NAME,
@@ -35,10 +35,12 @@ const lambdaHandler = async (
       ["content-length-range", payload.size, payload.size],
       ["eq", "$Content-Type", "text/plain"],
       ["eq", "$x-amz-meta-name", payload.name],
+      ["eq", "$x-amz-meta-id", id],
     ],
     Fields: {
       "Content-Type": "text/plain",
       "x-amz-meta-name": payload.name,
+      "x-amz-meta-id": id,
     },
     Expires: 20_000,
     Key: key,
