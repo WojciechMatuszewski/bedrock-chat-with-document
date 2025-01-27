@@ -20,12 +20,8 @@ export async function getUploadUrlAction(formData: FormData) {
       name: file.name,
       size: file.size,
     }),
-  }).then(async (response) => {
-    if (!response.ok) {
-      throw new Error("Failed to fetch");
-    }
-
-    return GetObjectUrlResponseSchema.parse(await response.json());
+  }).then((response) => {
+    return GetObjectUrlResponseSchema.parse(response);
   });
 
   const uploadFormData = new FormData();
@@ -34,11 +30,21 @@ export async function getUploadUrlAction(formData: FormData) {
   });
   uploadFormData.set("file", file);
 
-  await fetch(url, { method: "POST", body: uploadFormData }).then(
-    (response) => {
-      if (!response.ok) {
-        throw new Error("Failed to upload data");
-      }
-    },
+  await fetch(url, { method: "POST", body: uploadFormData });
+}
+
+async function fetch(...parameters: Parameters<typeof globalThis.fetch>) {
+  const response = await globalThis.fetch(...parameters);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch: ${await response.text()}`);
+  }
+
+  const { ["content-type"]: contentType = "" } = Object.fromEntries(
+    response.headers.entries(),
   );
+  if (contentType.toLocaleLowerCase() === "application/json") {
+    return (await response.json()) as unknown;
+  }
+
+  return await response.text();
 }

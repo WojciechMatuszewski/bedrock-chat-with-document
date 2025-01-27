@@ -6,7 +6,7 @@ import middy from "@middy/core";
 import { z } from "zod";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import { S3Client } from "@aws-sdk/client-s3";
-import crypto from "node:crypto";
+import { ulid } from "ulid";
 import {
   GetObjectUrlPayloadSchema,
   type GetObjectUrlPayload,
@@ -26,7 +26,7 @@ const s3Client = new S3Client({});
 const lambdaHandler = async (
   payload: GetObjectUrlPayload,
 ): Promise<GetObjectUrlResponse> => {
-  const id = crypto.randomUUID();
+  const id = ulid();
   const key = `${id}/data.txt`;
 
   const { url, fields } = await createPresignedPost(s3Client, {

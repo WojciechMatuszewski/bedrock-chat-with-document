@@ -50,6 +50,9 @@ importers:
       transport:
         specifier: workspace:*
         version: link:../packages/transport
+      ulid:
+        specifier: 2.3.0
+        version: 2.3.0
       zod:
         specifier: 3.24.1
         version: 3.24.1
@@ -2469,6 +2472,10 @@ packages:
   typescript@5.7.2:
     resolution: {integrity: sha512-i5t66RHxDvVN40HfDd1PsEThGNnlMCMT3jMUuoh9/0TaqWevNontacunWyN02LA9/fIbEWlcHZcgTKb9QoaLfg==}
     engines: {node: '>=14.17'}
+    hasBin: true
+
+  ulid@2.3.0:
+    resolution: {integrity: sha512-keqHubrlpvT6G2wH0OEfSW4mquYRcbe/J8NMmveoQOjUqmo+hXtO+ORCpWhdbZ7k72UtY61BL7haGxW6enBnjw==}
     hasBin: true
 
   unbox-primitive@1.1.0:
@@ -5441,6 +5448,8 @@ snapshots:
       - supports-color
 
   typescript@5.7.2: {}
+
+  ulid@2.3.0: {}
 
   unbox-primitive@1.1.0:
     dependencies:

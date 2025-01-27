@@ -17,8 +17,9 @@
     "aws-cdk-lib": "2.173.4",
     "constructs": "10.4.2",
     "esbuild": "0.24.2",
-    "zod": "3.24.1",
-    "transport": "workspace:*"
+    "transport": "workspace:*",
+    "ulid": "2.3.0",
+    "zod": "3.24.1"
   },
   "devDependencies": {
     "@cdklabs/generative-ai-cdk-constructs": "0.1.288",

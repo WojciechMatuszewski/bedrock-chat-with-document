@@ -10,6 +10,7 @@ import {
   Stack,
   type StackProps,
   aws_apigatewayv2,
+  aws_dynamodb,
   aws_events,
   aws_events_targets,
   aws_lambda,
@@ -17,6 +18,7 @@ import {
   aws_s3,
   aws_secretsmanager,
   aws_stepfunctions,
+  aws_stepfunctions_tasks,
 } from "aws-cdk-lib";
 import { CorsHttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -52,8 +54,11 @@ class AppStack extends Stack {
 
     const api = new API(this, { getUploadUrlFunction });
 
-    const ingestionStateMachine = new IngestionStateMachine(this);
+    const documentsTable = new DocumentsTable(this);
 
+    const ingestionStateMachine = new IngestionStateMachine(this, {
+      documentsBucket,
+    });
     documentUploadedRule.addTarget(
       new aws_events_targets.SfnStateMachine(ingestionStateMachine, {
         retryAttempts: 0,
@@ -178,12 +183,48 @@ class API extends aws_apigatewayv2.HttpApi {
 }
 
 export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
-  constructor(scope: Construct) {
+  constructor(
+    scope: Construct,
+    { documentsBucket }: { documentsBucket: aws_s3.Bucket },
+    // { documentsTable }: { documentsTable: aws_dynamodb.ITable },
+  ) {
+    const getDocumentMetadata = new aws_stepfunctions_tasks.CallAwsService(
+      scope,
+      "GetDocumentMetadata",
+      {
+        service: "s3",
+        action: "headObject",
+        parameters: {
+          Bucket: aws_stepfunctions.JsonPath.stringAt("$.bucketName"),
+          Key: aws_stepfunctions.JsonPath.stringAt("$.key"),
+        },
+        iamResources: [documentsBucket.arnForObjects("*")],
+        iamAction: "s3:GetObject",
+        // TODO: Combine somehow with the input?
+        resultSelector: {
+          name: aws_stepfunctions.JsonPath.stringAt("$.Metadata.name"),
+          id: aws_stepfunctions.JsonPath.stringAt("$.Metadata.id"),
+        },
+        resultPath: "$",
+      },
+    );
+
+    // const saveDocumentInTable = new aws_stepfunctions_tasks.DynamoPutItem(
+    //   scope,
+    //   "SaveDocumentInTable",
+    //   {
+    //     table: documentsTable,
+    //     item: {},
+    //   },
+    // );
+
     const testStep = new aws_stepfunctions.Pass(scope, "TestStep");
 
     super(scope, "IngestionStateMachine", {
       stateMachineType: aws_stepfunctions.StateMachineType.STANDARD,
-      definitionBody: aws_stepfunctions.DefinitionBody.fromChainable(testStep),
+      definitionBody: aws_stepfunctions.DefinitionBody.fromChainable(
+        getDocumentMetadata.next(testStep),
+      ),
     });
   }
 }
@@ -211,6 +252,19 @@ class RemovalPolicyAspect implements IAspect {
     if (node instanceof CfnResource) {
       node.applyRemovalPolicy(RemovalPolicy.DESTROY);
     }
+  }
+}
+
+class DocumentsTable extends aws_dynamodb.Table {
+  constructor(scope: Construct) {
+    super(scope, "DocumentsTable", {
+      partitionKey: {
+        name: "PK",
+        type: aws_dynamodb.AttributeType.STRING,
+      },
+      billingMode: aws_dynamodb.BillingMode.PAY_PER_REQUEST,
+      stream: aws_dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    });
   }
 }
 
