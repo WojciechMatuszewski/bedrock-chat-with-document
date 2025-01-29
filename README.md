@@ -62,4 +62,26 @@
 
       - The `server only` pragma means **"this file can only be imported in the server context"**.
 
-TODO: Research JSONata in Step Functions
+- You can make your data available to Bedrock via Knowledge bases in two ways.
+
+  1. You can use the `StartIngestionJob` operation.
+     1. Scans the entire S3 data source.
+     2. Checks each document if it's already indexed in vector store.
+     3. Used when you want to sync all S3 bucket changes.
+  2. You can use the `IngestKnowledgeBaseDocuments` operation.
+     1. Directly indexes specific documents into vector store.
+     2. Skips S3 scanning step.
+     3. Faster for individual document updates.
+     4. Changes are NOT reflected in S3 bucket.
+
+  So, it seems like the `StartIngestionJob` is more akin to a bach process where you want to perform updates at scale.
+
+  The `IngestKnowledgeBaseDocuments` is for one-off updates – ideal for our use-case!
+
+- **Both** the `StartIngestionJob` and `IngestKnowledgeBaseDocuments` are async operations.
+
+  - I wish Step Functions would support a `.sync` task for those, but that is not the case.
+
+- The AWS Console does not help at all with debugging failed `IngestKnowledgeBaseDocuments` job.
+
+  - You will see them listed as "failed", but the UI fails to displays the _reason_ for the failure :C

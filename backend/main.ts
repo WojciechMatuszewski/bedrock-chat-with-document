@@ -13,6 +13,7 @@ import {
   aws_dynamodb,
   aws_events,
   aws_events_targets,
+  aws_iam,
   aws_lambda,
   aws_lambda_nodejs,
   aws_s3,
@@ -61,6 +62,8 @@ class AppStack extends Stack {
     const ingestionStateMachine = new IngestionStateMachine(this, {
       documentsBucket,
       documentsTable,
+      dataSource,
+      knowledgeBase,
     });
     documentUploadedRule.addTarget(
       new aws_events_targets.SfnStateMachine(ingestionStateMachine, {
@@ -191,9 +194,13 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
     {
       documentsBucket,
       documentsTable,
+      dataSource,
+      knowledgeBase,
     }: {
       documentsBucket: aws_s3.Bucket;
       documentsTable: aws_dynamodb.ITableV2;
+      dataSource: BedrockDataSource;
+      knowledgeBase: BedrockKnowledgeBase;
     },
   ) {
     const getDocumentMetadata = new aws_stepfunctions_tasks.CallAwsService(
@@ -219,7 +226,7 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
         resultPath: "$",
       },
     );
-
+    // "The name of the metadata file to ingest into the knowledge base doesn't match the format <FILENAME>.metadata.json. Modify the name to conform to the format and retry your request."
     const uploadMetadataFile = new aws_stepfunctions_tasks.CallAwsService(
       scope,
       "UploadMetadataFile",
@@ -228,7 +235,10 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
         action: "putObject",
         parameters: {
           Bucket: JsonPath.stringAt("$.bucketName"),
-          Key: JsonPath.format("{}/metadata.json", JsonPath.stringAt("$.id")),
+          Key: JsonPath.format(
+            "{}/data.txt.metadata.json",
+            JsonPath.stringAt("$.id"),
+          ),
           Body: JsonPath.stringToJson(
             JsonPath.format(
               '\\{"name":"{}","id":"{}" \\}',
@@ -258,8 +268,6 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
       },
     );
 
-    // TODO: Bedrock start ingestion job with Event Bridge and "Wait for callback" pattern
-
     const prepareDocumentForIngestion = new aws_stepfunctions.Parallel(
       scope,
       "PrepareDocumentForIngestion",
@@ -268,10 +276,64 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
     prepareDocumentForIngestion.branch(uploadMetadataFile);
     prepareDocumentForIngestion.branch(saveDocumentInTable);
 
+    const ingestDocument = new aws_stepfunctions_tasks.CallAwsService(
+      scope,
+      "IngestDocument",
+      {
+        service: "bedrockAgent",
+        action: "ingestKnowledgeBaseDocuments",
+        parameters: {
+          DataSourceId: dataSource.dataSourceId,
+          KnowledgeBaseId: knowledgeBase.knowledgeBaseId,
+          Documents: [
+            {
+              Content: {
+                DataSourceType: "S3",
+                S3: {
+                  S3Location: {
+                    Uri: JsonPath.format(
+                      "s3://{}/{}",
+                      JsonPath.stringAt("$.bucketName"),
+                      JsonPath.stringAt("$.key"),
+                    ),
+                  },
+                },
+              },
+              Metadata: {
+                S3Location: {
+                  BucketOwnerAccountId: Stack.of(scope).account,
+                  Uri: JsonPath.format(
+                    "s3://{}/{}/data.txt.metadata.json",
+                    JsonPath.stringAt("$.bucketName"),
+                    JsonPath.stringAt("$.id"),
+                  ),
+                },
+                Type: "S3_LOCATION",
+              },
+            },
+          ],
+        },
+        iamResources: [knowledgeBase.knowledgeBaseArn],
+        iamAction: "bedrock:StartIngestionJob",
+        additionalIamStatements: [
+          new aws_iam.PolicyStatement({
+            actions: [
+              "bedrock:IngestKnowledgeBaseDocuments",
+              "bedrock:AssociateThirdPartyKnowledgeBase",
+            ],
+            resources: [knowledgeBase.knowledgeBaseArn],
+            effect: aws_iam.Effect.ALLOW,
+          }),
+        ],
+      },
+    );
+
     super(scope, "IngestionStateMachine", {
       stateMachineType: aws_stepfunctions.StateMachineType.STANDARD,
       definitionBody: aws_stepfunctions.DefinitionBody.fromChainable(
-        getDocumentMetadata.next(prepareDocumentForIngestion),
+        getDocumentMetadata
+          .next(prepareDocumentForIngestion)
+          .next(ingestDocument),
       ),
     });
   }
