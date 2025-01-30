@@ -27,19 +27,23 @@ const lambdaHandler = async (
   payload: GetObjectUrlPayload,
 ): Promise<GetObjectUrlResponse> => {
   const id = ulid();
-  const key = `${id}/data.txt`;
+
+  const newFileName = "data";
+  const key = `${id}/${newFileName}`;
 
   const { url, fields } = await createPresignedPost(s3Client, {
     Bucket: env.BUCKET_NAME,
     Conditions: [
       ["content-length-range", payload.size, payload.size],
       ["eq", "$Content-Type", "text/plain"],
-      ["eq", "$x-amz-meta-name", payload.name],
+      ["eq", "$x-amz-meta-original_file_name", payload.name],
+      ["eq", "$x-amz-meta-file_name", newFileName],
       ["eq", "$x-amz-meta-id", id],
     ],
     Fields: {
       "Content-Type": "text/plain",
-      "x-amz-meta-name": payload.name,
+      "x-amz-meta-original_file_name": payload.name,
+      "x-amz-meta-file_name": newFileName,
       "x-amz-meta-id": id,
     },
     Expires: 20_000,

@@ -102,7 +102,7 @@ class DocumentUploadedRule extends aws_events.Rule {
             name: [documentsBucketName],
           },
           object: {
-            key: [{ suffix: "data.txt" }],
+            key: [{ suffix: "data" }],
           },
         },
       },
@@ -219,14 +219,19 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
           bucketName: aws_stepfunctions.JsonPath.stringAt(
             "$$.Execution.Input.bucketName",
           ),
-          key: aws_stepfunctions.JsonPath.stringAt("$$.Execution.Input.key"),
-          name: aws_stepfunctions.JsonPath.stringAt("$.Metadata.name"),
-          id: aws_stepfunctions.JsonPath.stringAt("$.Metadata.id"),
+          fileKey: aws_stepfunctions.JsonPath.stringAt(
+            "$$.Execution.Input.key",
+          ),
+          fileId: aws_stepfunctions.JsonPath.stringAt("$.Metadata.id"),
+          originalFileName: aws_stepfunctions.JsonPath.stringAt(
+            "$.Metadata.original_file_name",
+          ),
+          fileName: aws_stepfunctions.JsonPath.stringAt("$.Metadata.file_name"),
         },
         resultPath: "$",
       },
     );
-    // "The name of the metadata file to ingest into the knowledge base doesn't match the format <FILENAME>.metadata.json. Modify the name to conform to the format and retry your request."
+
     const uploadMetadataFile = new aws_stepfunctions_tasks.CallAwsService(
       scope,
       "UploadMetadataFile",
@@ -236,14 +241,14 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
         parameters: {
           Bucket: JsonPath.stringAt("$.bucketName"),
           Key: JsonPath.format(
-            "{}/data.txt.metadata.json",
-            JsonPath.stringAt("$.id"),
+            "{}.metadata.json",
+            JsonPath.stringAt("$.fileKey"),
           ),
           Body: JsonPath.stringToJson(
             JsonPath.format(
-              '\\{"name":"{}","id":"{}" \\}',
-              JsonPath.stringAt("$.name"),
-              JsonPath.stringAt("$.id"),
+              `\\{ "metadataAttributes": \\{"originalFileName":"{}","fileId":"{}" \\} \\}`,
+              JsonPath.stringAt("$.originalFileName"),
+              JsonPath.stringAt("$.fileId"),
             ),
           ),
           ContentType: "application/json",
@@ -260,8 +265,13 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
       {
         table: documentsTable,
         item: {
-          id: DynamoAttributeValue.fromString(JsonPath.stringAt("$.id")),
-          name: DynamoAttributeValue.fromString(JsonPath.stringAt("$.name")),
+          id: DynamoAttributeValue.fromString(JsonPath.stringAt("$.fileId")),
+          originalFileName: DynamoAttributeValue.fromString(
+            JsonPath.stringAt("$.originalFileName"),
+          ),
+          fileName: DynamoAttributeValue.fromString(
+            JsonPath.stringAt("$.fileName"),
+          ),
           status: DynamoAttributeValue.fromString("PENDING"),
         },
         resultPath: JsonPath.DISCARD,
@@ -294,7 +304,7 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
                     Uri: JsonPath.format(
                       "s3://{}/{}",
                       JsonPath.stringAt("$.bucketName"),
-                      JsonPath.stringAt("$.key"),
+                      JsonPath.stringAt("$.fileKey"),
                     ),
                   },
                 },
@@ -303,9 +313,9 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
                 S3Location: {
                   BucketOwnerAccountId: Stack.of(scope).account,
                   Uri: JsonPath.format(
-                    "s3://{}/{}/data.txt.metadata.json",
+                    "s3://{}/{}.metadata.json",
                     JsonPath.stringAt("$.bucketName"),
-                    JsonPath.stringAt("$.id"),
+                    JsonPath.stringAt("$.fileKey"),
                   ),
                 },
                 Type: "S3_LOCATION",

@@ -85,3 +85,13 @@
 - The AWS Console does not help at all with debugging failed `IngestKnowledgeBaseDocuments` job.
 
   - You will see them listed as "failed", but the UI fails to displays the _reason_ for the failure :C
+
+- **AWS stories S3 object metadata keys in _all lowercase_**.
+
+  - For example, `originalFileName` becomes `originalfilename`.
+
+- When ingesting documents into Bedrock, I had to change the name of the file from `data.txt` to `data`. Otherwise, when trying to ingest metadata for that file, Bedrock would reject files named `data.txt.metadata.json`.
+
+- **The `.metadata.json` file has to have specific structure**. There must be `metadataAttributes` key containing the attributes. Otherwise it won't work!
+
+TODO: Is there a way to have Bedrock emit an event when document ingestion is done?
