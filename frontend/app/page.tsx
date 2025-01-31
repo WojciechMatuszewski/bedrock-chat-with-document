@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import { getUploadUrlAction } from "./lib/actions";
+import { uploadDocumentAction } from "./lib/actions";
 
 export default function Home() {
   const [, formAction, isPending] = useActionState(
-    (_: unknown, formData: FormData) => getUploadUrlAction(formData),
+    (_: unknown, formData: FormData) => uploadDocumentAction(formData),
     null,
   );
 

@@ -8,7 +8,7 @@ const GetUploadUrlFormDataSchema = z.object({
   file: z.instanceof(File),
 });
 
-export async function getUploadUrlAction(formData: FormData) {
+export async function uploadDocumentAction(formData: FormData) {
   const { file } = GetUploadUrlFormDataSchema.parse(
     Object.fromEntries(formData.entries()),
   );

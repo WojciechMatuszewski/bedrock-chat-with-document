@@ -94,4 +94,12 @@
 
 - **The `.metadata.json` file has to have specific structure**. There must be `metadataAttributes` key containing the attributes. Otherwise it won't work!
 
-TODO: Is there a way to have Bedrock emit an event when document ingestion is done?
+- **It appears that Bedrock won't emit events related to the `IngestKnowledgeBaseDocuments` API**. [Link to the documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/monitoring-eventbridge.html).
+
+  - Such a shame. I was hoping I could use EventBridge with "wait for callback" StepFunction pattern to continue the state machine when ingestion is done.
+
+    - To notify the FE about the changes, and update state in the database, I have to implement the "wait loop" in the state function. Not a big deal, but it makes the state machine definition harder to read.
+
+- While writing Step Functions definitions, I can't shake the feeling that It would be awesome to have some kind of type safety for parameters I'm passing from one state to another.
+
+  - For now, the `JsonPath` are strings scattered throughout the cdk file. Perhaps there is some pattern out there to give me that type safety?
