@@ -16,6 +16,9 @@ export async function uploadDocumentAction(formData: FormData) {
   const endpointUrl = new URL("/upload-url", getEnv().API_ROOT_URL);
   const { url, fields } = await fetch(endpointUrl, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       name: file.name,
       size: file.size,

@@ -1,3 +1,6 @@
+import * as aws_pipes from "@aws-cdk/aws-pipes-alpha";
+import * as aws_pipes_sources from "@aws-cdk/aws-pipes-sources-alpha";
+import * as aws_pipes_targets from "@aws-cdk/aws-pipes-targets-alpha";
 import genai from "@cdklabs/generative-ai-cdk-constructs";
 import {
   ChunkingStrategy,
@@ -11,6 +14,7 @@ import {
   Duration,
   type IAspect,
   RemovalPolicy,
+  SecretValue,
   Stack,
   type StackProps,
   aws_apigatewayv2,
@@ -20,6 +24,7 @@ import {
   aws_iam,
   aws_lambda,
   aws_lambda_nodejs,
+  aws_logs,
   aws_s3,
   aws_secretsmanager,
   aws_stepfunctions,
@@ -27,15 +32,19 @@ import {
 } from "aws-cdk-lib";
 import { CorsHttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import type { ITableV2 } from "aws-cdk-lib/aws-dynamodb";
+import { HttpMethod } from "aws-cdk-lib/aws-events";
+import { RetentionDays } from "aws-cdk-lib/aws-logs";
 import type { IBucket } from "aws-cdk-lib/aws-s3";
 import {
+  type IStateMachine,
   JsonPath,
   TaskInput,
-  type IStateMachine,
 } from "aws-cdk-lib/aws-stepfunctions";
 import { DynamoAttributeValue } from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { Construct, type IConstruct } from "constructs";
 import { fileURLToPath } from "url";
+import { getEnv } from "./env.ts";
 
 class AppStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -66,6 +75,10 @@ class AppStack extends Stack {
     const api = new API(this, { getUploadUrlFunction });
 
     const documentsTable = new DocumentsTable(this);
+
+    const documentsStatusPipe = new DocumentsStatusPipe(this, {
+      documentsTable,
+    });
 
     const ingestionStateMachine = new IngestionStateMachine(this, {
       knowledgeBase,
@@ -133,7 +146,7 @@ class BedrockKnowledgeBase extends genai.bedrock.KnowledgeBase {
     const pineconeApiKey = aws_secretsmanager.Secret.fromSecretCompleteArn(
       scope,
       "PineconeApiKey",
-      process.env["PINECONE_API_KEY_SECRET_ARN"]!,
+      getEnv().PINECONE_API_KEY_SECRET_ARN,
     );
 
     const embeddingsModel =
@@ -143,7 +156,7 @@ class BedrockKnowledgeBase extends genai.bedrock.KnowledgeBase {
       /**
        * The CFN checks if the format of this parameter resembles an HTTPs address.
        */
-      connectionString: process.env["PINECONE_ENDPOINT_URL"]!,
+      connectionString: getEnv().PINECONE_ENDPOINT_URL,
       credentialsSecretArn: pineconeApiKey.secretArn,
       textField: "text",
       metadataField: "metadata",
@@ -438,7 +451,7 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
       scope,
       "WaitBeforeCheckingIngestionState",
       {
-        time: aws_stepfunctions.WaitTime.duration(Duration.seconds(30)),
+        time: aws_stepfunctions.WaitTime.duration(Duration.seconds(5)),
       },
     );
 
@@ -540,6 +553,77 @@ class DocumentsTable extends aws_dynamodb.TableV2 {
       },
       billing: aws_dynamodb.Billing.onDemand(),
       dynamoStream: aws_dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    });
+  }
+}
+
+/**
+ * Taken from https://community.aws/content/2qf2QV7iPrfgLCMt4Irk9XCaWvm/serverless-chat-on-aws-with-appsync-events
+ */
+
+class DocumentsStatusPipe extends aws_pipes.Pipe {
+  constructor(
+    scope: Construct,
+    { documentsTable }: { documentsTable: ITableV2 },
+  ) {
+    const documentsStreamSource = new aws_pipes_sources.DynamoDBSource(
+      documentsTable,
+      {
+        startingPosition: aws_pipes_sources.DynamoDBStartingPosition.LATEST,
+      },
+    );
+
+    const appSyncEventsAPIConnection = new aws_events.Connection(
+      scope,
+      "AppSyncEventsAPIConnection",
+      {
+        authorization: aws_events.Authorization.apiKey(
+          "apiKey",
+          /**
+           * Why do we have to duplicate this below?
+           */
+          SecretValue.unsafePlainText(getEnv().APPSYNC_EVENTS_API_KEY),
+        ),
+      },
+    );
+
+    const appSyncEventsAPIDestination = new aws_events.ApiDestination(
+      scope,
+      "AppsyncEventsAPIDestination",
+      {
+        connection: appSyncEventsAPIConnection,
+        endpoint: getEnv().PINECONE_ENDPOINT_URL,
+        httpMethod: HttpMethod.POST,
+      },
+    );
+
+    const appSyncEventsAPITarget = new aws_pipes_targets.ApiDestinationTarget(
+      appSyncEventsAPIDestination,
+      {
+        inputTransformation: aws_pipes.InputTransformation.fromObject({
+          /**
+           * TODO: The channel has to have a `/` in it. Otherwise the events are ignored?
+           */
+          channel: `files`,
+          events: [JSON.stringify({ dynamodbEvent: "<$.dynamodb.NewImage>" })],
+        }),
+        headerParameters: {
+          "X-Api-Key": getEnv().APPSYNC_EVENTS_API_KEY,
+        },
+      },
+    );
+
+    const pipesLogs = new aws_pipes.CloudwatchLogsLogDestination(
+      new aws_logs.LogGroup(scope, "DocumentStatusPipeLogs", {
+        retention: RetentionDays.ONE_DAY,
+      }),
+    );
+
+    super(scope, "DocumentStatusPipe", {
+      source: documentsStreamSource,
+      target: appSyncEventsAPITarget,
+      logLevel: aws_pipes.LogLevel.TRACE,
+      logDestinations: [pipesLogs],
     });
   }
 }

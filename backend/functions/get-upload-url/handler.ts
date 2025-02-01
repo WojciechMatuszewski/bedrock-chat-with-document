@@ -28,6 +28,8 @@ const lambdaHandler = async (
 ): Promise<GetObjectUrlResponse> => {
   const id = ulid();
 
+  console.log("got the function body");
+
   const newFileName = "data";
   const key = `${id}/${newFileName}`;
 
