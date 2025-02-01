@@ -103,3 +103,5 @@
 - While writing Step Functions definitions, I can't shake the feeling that It would be awesome to have some kind of type safety for parameters I'm passing from one state to another.
 
   - For now, the `JsonPath` are strings scattered throughout the cdk file. Perhaps there is some pattern out there to give me that type safety?
+
+- There are multiple ways to invoke a state machine from another state machine. In my case, I need to wait until the "ingestion" state machine finishes before completing the "parent" state machine.

@@ -207,14 +207,10 @@ export class DocumentsStateMachine extends aws_stepfunctions.StateMachine {
       documentsBucket,
       documentsTable,
       ingestionStateMachine,
-      // dataSource,
-      // knowledgeBase,
     }: {
       documentsBucket: aws_s3.Bucket;
       documentsTable: aws_dynamodb.ITableV2;
       ingestionStateMachine: IStateMachine;
-      // dataSource: BedrockDataSource;
-      // knowledgeBase: BedrockKnowledgeBase;
     },
   ) {
     const getDocumentMetadata = new aws_stepfunctions_tasks.CallAwsService(
@@ -306,8 +302,7 @@ export class DocumentsStateMachine extends aws_stepfunctions.StateMachine {
         "InvokeIngestionStateMachine",
         {
           stateMachine: ingestionStateMachine,
-          integrationPattern:
-            aws_stepfunctions.IntegrationPattern.REQUEST_RESPONSE,
+          integrationPattern: aws_stepfunctions.IntegrationPattern.RUN_JOB,
           input: TaskInput.fromObject({
             documentS3Uri: JsonPath.format(
               "s3://{}/{}",
@@ -321,71 +316,66 @@ export class DocumentsStateMachine extends aws_stepfunctions.StateMachine {
             ),
           }),
           associateWithParent: true,
+          resultPath: JsonPath.DISCARD,
         },
       );
 
-    // const ingestDocument = new aws_stepfunctions_tasks.CallAwsService(
-    //   scope,
-    //   "IngestDocument",
-    //   {
-    //     service: "bedrockAgent",
-    //     action: "ingestKnowledgeBaseDocuments",
-    //     parameters: {
-    //       DataSourceId: dataSource.dataSourceId,
-    //       KnowledgeBaseId: knowledgeBase.knowledgeBaseId,
-    //       Documents: [
-    //         {
-    //           Content: {
-    //             DataSourceType: "S3",
-    //             S3: {
-    //               S3Location: {
-    //                 Uri: JsonPath.format(
-    //                   "s3://{}/{}",
-    //                   JsonPath.stringAt("$.bucketName"),
-    //                   JsonPath.stringAt("$.fileKey"),
-    //                 ),
-    //               },
-    //             },
-    //           },
-    //           Metadata: {
-    //             S3Location: {
-    //               BucketOwnerAccountId: Stack.of(scope).account,
-    //               Uri: JsonPath.format(
-    //                 "s3://{}/{}.metadata.json",
-    //                 JsonPath.stringAt("$.bucketName"),
-    //                 JsonPath.stringAt("$.fileKey"),
-    //               ),
-    //             },
-    //             Type: "S3_LOCATION",
-    //           },
-    //         },
-    //       ],
-    //     },
-    //     iamResources: [knowledgeBase.knowledgeBaseArn],
-    //     iamAction: "bedrock:StartIngestionJob",
-    //     additionalIamStatements: [
-    //       new aws_iam.PolicyStatement({
-    //         actions: [
-    //           "bedrock:IngestKnowledgeBaseDocuments",
-    //           "bedrock:AssociateThirdPartyKnowledgeBase",
-    //         ],
-    //         resources: [knowledgeBase.knowledgeBaseArn],
-    //         effect: aws_iam.Effect.ALLOW,
-    //       }),
-    //     ],
-    //     resultPath: JsonPath.DISCARD,
-    //   },
-    // );
+    const updateDocumentInTableIngestionSuccess =
+      new aws_stepfunctions_tasks.DynamoUpdateItem(
+        scope,
+        "UpdateDocumentInTableIngestionSuccess",
+        {
+          key: {
+            id: DynamoAttributeValue.fromString(JsonPath.stringAt("$.fileId")),
+          },
+          table: documentsTable,
+          conditionExpression: "attribute_exists(#id)",
+          updateExpression: "SET #status = :status",
+          resultPath: JsonPath.DISCARD,
+          expressionAttributeNames: {
+            "#status": "status",
+            "#id": "id",
+          },
+          expressionAttributeValues: {
+            ":status": DynamoAttributeValue.fromString("READY"),
+          },
+        },
+      );
+
+    const updateDocumentInTableIngestionFailure =
+      new aws_stepfunctions_tasks.DynamoUpdateItem(
+        scope,
+        "UpdateDocumentInTableIngestionFailure",
+        {
+          key: {
+            id: DynamoAttributeValue.fromString(JsonPath.stringAt("$.fileId")),
+          },
+          table: documentsTable,
+          conditionExpression: "attribute_exists(#id)",
+          updateExpression: "SET #status = :status",
+          resultPath: JsonPath.DISCARD,
+          expressionAttributeNames: {
+            "#status": "status",
+            "#id": "id",
+          },
+          expressionAttributeValues: {
+            ":status": DynamoAttributeValue.fromString("FAILED"),
+          },
+        },
+      );
 
     super(scope, "DocumentsStateMachine", {
       stateMachineType: aws_stepfunctions.StateMachineType.STANDARD,
       definitionBody: aws_stepfunctions.DefinitionBody.fromChainable(
         getDocumentMetadata
           .next(prepareDocumentForIngestion)
-          .next(invokeIngestionStateMachine),
-        // .next(ingestDocument)
-        // .next(waitBeforeCheckingIngestionState)
-        // .next(checkIngestionState),
+          .next(
+            invokeIngestionStateMachine.addCatch(
+              updateDocumentInTableIngestionFailure,
+              { resultPath: JsonPath.DISCARD },
+            ),
+          )
+          .next(updateDocumentInTableIngestionSuccess),
       ),
     });
   }
@@ -448,7 +438,7 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
       scope,
       "WaitBeforeCheckingIngestionState",
       {
-        time: aws_stepfunctions.WaitTime.duration(Duration.seconds(5)),
+        time: aws_stepfunctions.WaitTime.duration(Duration.seconds(30)),
       },
     );
 
@@ -465,11 +455,7 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
             {
               DataSourceType: "S3",
               S3: {
-                Uri: JsonPath.format(
-                  "s3://{}/{}",
-                  JsonPath.stringAt("$.bucketName"),
-                  JsonPath.stringAt("$.fileKey"),
-                ),
+                Uri: JsonPath.stringAt("$$.Execution.Input.documentS3Uri"),
               },
             },
           ],
@@ -482,17 +468,38 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
             effect: aws_iam.Effect.ALLOW,
           }),
         ],
+        resultSelector: {
+          status: JsonPath.stringAt("$.DocumentDetails[0].Status"),
+        },
       },
     );
 
-    // const decideBasedOnIngestionState = aws_stepfunctions.Choice()
+    const waitAndCheckIngestionStatus =
+      waitBeforeCheckingIngestionState.next(checkIngestionState);
+
+    const decideOnIngestionState = new aws_stepfunctions.Choice(
+      scope,
+      "DecideOnIngestionState",
+      {},
+    );
+
+    const documentIndexed = new aws_stepfunctions.Pass(
+      scope,
+      "DocumentIndexed",
+    );
+    decideOnIngestionState.when(
+      aws_stepfunctions.Condition.stringEquals("$.status", "INDEXED"),
+      documentIndexed,
+    );
+    decideOnIngestionState.otherwise(waitAndCheckIngestionStatus);
 
     super(scope, "IngestionStateMachine", {
       stateMachineType: aws_stepfunctions.StateMachineType.STANDARD,
+      timeout: Duration.seconds(30),
       definitionBody: aws_stepfunctions.DefinitionBody.fromChainable(
         ingestDocument
-          .next(waitBeforeCheckingIngestionState)
-          .next(checkIngestionState),
+          .next(waitAndCheckIngestionStatus)
+          .next(decideOnIngestionState),
       ),
     });
   }
