@@ -6,17 +6,21 @@
     "deploy": "turbo deploy",
     "lint": "turbo lint",
     "dev": "turbo dev",
-    "bootstrap": "turbo bootstrap"
+    "bootstrap": "turbo bootstrap",
+    "update-dependencies": "ncu --deep --upgrade"
   },
   "devDependencies": {
     "prettier": "3.4.2",
-    "turbo": "2.3.3",
-    "typescript": "5.7.2"
+    "turbo": "2.4.0",
+    "typescript": "5.7.3"
   },
   "prettier": {
     "tabWidth": 2,
     "semi": true,
     "singleQuote": false
   },
-  "packageManager": "pnpm@9.15.2"
+  "packageManager": "pnpm@9.15.4",
+  "dependencies": {
+    "npm-check-updates": "17.1.14"
+  }
 }
