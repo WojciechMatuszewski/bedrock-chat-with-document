@@ -5,7 +5,7 @@ import genai from "@cdklabs/generative-ai-cdk-constructs";
 import {
   ChunkingStrategy,
   type DataSource,
-  type KnowledgeBase,
+  type IKnowledgeBase,
 } from "@cdklabs/generative-ai-cdk-constructs/lib/cdk-lib/bedrock/index.js";
 import {
   App,
@@ -18,6 +18,7 @@ import {
   Stack,
   type StackProps,
   aws_apigatewayv2,
+  aws_appsync,
   aws_dynamodb,
   aws_events,
   aws_events_targets,
@@ -72,12 +73,14 @@ class AppStack extends Stack {
     });
     documentsBucket.grantPut(getUploadUrlFunction);
 
-    const api = new API(this, { getUploadUrlFunction });
+    const documentsAPI = new DocumentsAPI(this, { getUploadUrlFunction });
+    const documentsEventsAPI = new DocumentsEventsAPI(this);
 
     const documentsTable = new DocumentsTable(this);
 
     const documentsStatusPipe = new DocumentsStatusPipe(this, {
       documentsTable,
+      documentsEventsAPI,
     });
 
     const ingestionStateMachine = new IngestionStateMachine(this, {
@@ -135,7 +138,7 @@ class DocumentUploadedRule extends aws_events.Rule {
   }
 }
 
-class BedrockKnowledgeBase extends genai.bedrock.KnowledgeBase {
+class BedrockKnowledgeBase extends genai.bedrock.VectorKnowledgeBase {
   constructor(scope: Construct) {
     /**
      * CFN checks validity of the data.
@@ -175,7 +178,7 @@ class BedrockDataSource extends genai.bedrock.S3DataSource {
     {
       bucket,
       knowledgeBase,
-    }: { bucket: IBucket; knowledgeBase: genai.bedrock.KnowledgeBase },
+    }: { bucket: IBucket; knowledgeBase: IKnowledgeBase },
   ) {
     super(scope, "BedrockDataStore", {
       bucket,
@@ -186,7 +189,7 @@ class BedrockDataSource extends genai.bedrock.S3DataSource {
   }
 }
 
-class API extends aws_apigatewayv2.HttpApi {
+class DocumentsAPI extends aws_apigatewayv2.HttpApi {
   constructor(
     scope: Construct,
     { getUploadUrlFunction }: { getUploadUrlFunction: LambdaFunction },
@@ -400,7 +403,7 @@ export class IngestionStateMachine extends aws_stepfunctions.StateMachine {
     {
       dataSource,
       knowledgeBase,
-    }: { dataSource: DataSource; knowledgeBase: KnowledgeBase },
+    }: { dataSource: DataSource; knowledgeBase: IKnowledgeBase },
   ) {
     const ingestDocument = new aws_stepfunctions_tasks.CallAwsService(
       scope,
@@ -557,14 +560,62 @@ class DocumentsTable extends aws_dynamodb.TableV2 {
   }
 }
 
+class DocumentsEventsAPI extends aws_appsync.EventApi {
+  static apiKeyName = "DocumentsEventsAPIApiKey";
+
+  getApiKey: () => string;
+  getEventsEndpoint: () => string;
+
+  namespaceName = "events";
+
+  constructor(scope: Construct) {
+    super(scope, "DocumentsEventsAPI", {
+      apiName: "DocumentsEventsAPI",
+      authorizationConfig: {
+        authProviders: [
+          {
+            authorizationType: aws_appsync.AppSyncAuthorizationType.API_KEY,
+            apiKeyConfig: { name: DocumentsEventsAPI.apiKeyName },
+          },
+        ],
+      },
+      logConfig: {
+        fieldLogLevel: aws_appsync.AppSyncFieldLogLevel.ALL,
+        excludeVerboseContent: false,
+        retention: RetentionDays.ONE_DAY,
+      },
+    });
+
+    this.addChannelNamespace(this.namespaceName);
+
+    this.getApiKey = () => {
+      const apiKey = this.apiKeys[DocumentsEventsAPI.apiKeyName]?.attrApiKey;
+      if (!apiKey) {
+        throw new Error("Boom");
+      }
+
+      return apiKey;
+    };
+
+    this.getEventsEndpoint = () => {
+      return `https://${this.httpDns}/event`;
+    };
+  }
+}
+
 /**
  * Taken from https://community.aws/content/2qf2QV7iPrfgLCMt4Irk9XCaWvm/serverless-chat-on-aws-with-appsync-events
  */
-
 class DocumentsStatusPipe extends aws_pipes.Pipe {
   constructor(
     scope: Construct,
-    { documentsTable }: { documentsTable: ITableV2 },
+    {
+      documentsTable,
+      documentsEventsAPI,
+    }: {
+      documentsTable: ITableV2;
+      documentsEventsAPI: DocumentsEventsAPI;
+    },
   ) {
     const documentsStreamSource = new aws_pipes_sources.DynamoDBSource(
       documentsTable,
@@ -573,57 +624,67 @@ class DocumentsStatusPipe extends aws_pipes.Pipe {
       },
     );
 
-    const appSyncEventsAPIConnection = new aws_events.Connection(
+    const documentsEventsAPIConnection = new aws_events.Connection(
       scope,
-      "AppSyncEventsAPIConnection",
+      "DocumentsEventsAPIConnection",
       {
         authorization: aws_events.Authorization.apiKey(
           "apiKey",
-          /**
-           * Why do we have to duplicate this below?
-           */
-          SecretValue.unsafePlainText(getEnv().APPSYNC_EVENTS_API_KEY),
+          SecretValue.unsafePlainText(documentsEventsAPI.getApiKey()),
         ),
       },
     );
 
-    const appSyncEventsAPIDestination = new aws_events.ApiDestination(
+    const documentsEventsAPIDestination = new aws_events.ApiDestination(
       scope,
-      "AppsyncEventsAPIDestination",
+      "DocumentsEventsAPIDestination",
       {
-        connection: appSyncEventsAPIConnection,
-        endpoint: getEnv().PINECONE_ENDPOINT_URL,
+        connection: documentsEventsAPIConnection,
+        endpoint: documentsEventsAPI.getEventsEndpoint(),
         httpMethod: HttpMethod.POST,
       },
     );
 
-    const appSyncEventsAPITarget = new aws_pipes_targets.ApiDestinationTarget(
-      appSyncEventsAPIDestination,
-      {
-        inputTransformation: aws_pipes.InputTransformation.fromObject({
-          /**
-           * TODO: The channel has to have a `/` in it. Otherwise the events are ignored?
-           */
-          channel: `files`,
-          events: [JSON.stringify({ dynamodbEvent: "<$.dynamodb.NewImage>" })],
-        }),
-        headerParameters: {
-          "X-Api-Key": getEnv().APPSYNC_EVENTS_API_KEY,
+    const documentsEventsAPIDestinationTarget =
+      new aws_pipes_targets.ApiDestinationTarget(
+        documentsEventsAPIDestination,
+        {
+          inputTransformation: aws_pipes.InputTransformation.fromObject({
+            channel: `/${documentsEventsAPI.namespaceName}/documents`,
+            events: [
+              JSON.stringify({
+                id: "<$.dynamodb.NewImage.id.S>",
+                originalFileName: "<$.dynamodb.NewImage.originalFileName.S>",
+                status: "<$.dynamodb.NewImage.status.S>",
+              }),
+            ],
+          }),
+          headerParameters: {
+            "X-Api-Key": documentsEventsAPI.getApiKey(),
+            "Content-Type": "application/json",
+          },
         },
-      },
-    );
+      );
+
+    const documentsPipeFilter = new aws_pipes.Filter([
+      aws_pipes.FilterPattern.fromObject({
+        eventName: ["INSERT", "MODIFY"],
+      }),
+    ]);
 
     const pipesLogs = new aws_pipes.CloudwatchLogsLogDestination(
-      new aws_logs.LogGroup(scope, "DocumentStatusPipeLogs", {
+      new aws_logs.LogGroup(scope, "DocumentsStatusPipeLogs2", {
         retention: RetentionDays.ONE_DAY,
       }),
     );
 
-    super(scope, "DocumentStatusPipe", {
+    super(scope, "DocumentsStatusPipe", {
       source: documentsStreamSource,
-      target: appSyncEventsAPITarget,
+      target: documentsEventsAPIDestinationTarget,
       logLevel: aws_pipes.LogLevel.TRACE,
       logDestinations: [pipesLogs],
+      logIncludeExecutionData: [aws_pipes.IncludeExecutionData.ALL],
+      filter: documentsPipeFilter,
     });
   }
 }

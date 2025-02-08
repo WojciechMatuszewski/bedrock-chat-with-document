@@ -105,3 +105,22 @@
   - For now, the `JsonPath` are strings scattered throughout the cdk file. Perhaps there is some pattern out there to give me that type safety?
 
 - There are multiple ways to invoke a state machine from another state machine. In my case, I need to wait until the "ingestion" state machine finishes before completing the "parent" state machine.
+
+- **When using AppSync Events API, you must specify the _namespace_**. Otherwise the API will reject your request.
+
+  - I was quite confused when I tried to test things in the console and my request were rejected to to permissions issue.
+
+    - It turns out that my IC definition did not create any namespaces!
+
+- Making sure you log all the events of the EventBridge Pipe will save you lots of time when debugging issues.
+
+- **For some reason, I could not send the _whole_ DynamoDB "change record" to AppSync Events due to serialization issues**.
+
+  ```
+    inputTransformation: aws_pipes.InputTransformation.fromObject({
+      channel: `/${documentsEventsAPI.namespaceName}/documents`,
+      events: [{ dynamodbEvent: "<$.dynamodb.NewImage>" }], -> this would not work.
+    })
+  ```
+
+  I had to extract the relevant data from `NewImage`.
