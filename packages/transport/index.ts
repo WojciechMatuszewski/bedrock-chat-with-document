@@ -13,3 +13,11 @@ export const GetObjectUrlResponseSchema = z.object({
 });
 
 export type GetObjectUrlResponse = z.infer<typeof GetObjectUrlResponseSchema>;
+
+export const ChatWithDocumentPayloadSchema = z.object({
+  text: z.string(),
+});
+
+export type ChatWithDocumentPayload = z.infer<
+  typeof ChatWithDocumentPayloadSchema
+>;

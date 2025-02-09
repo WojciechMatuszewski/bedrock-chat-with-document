@@ -124,3 +124,35 @@
   ```
 
   I had to extract the relevant data from `NewImage`.
+
+- The Amazon Bedrock Agents have a native capability to remember the chat history. Quite handy!
+
+  - Memory summarization is only available for certain models.
+
+- The default quotas for new accounts for Amazon Bedrock are quite laughable. We are talking **four** requests a minute for some models. I wonder why is that the case? To prevent abuse?
+
+- **Instead of fighting with the AWS Lambda lackluster streaming capabilities**, consider **using Websockets (perhaps AppSync events API?) to stream down responses**.
+
+  - If you _really_ want to use the response streaming, you might find the following type declarations handy. [Example usage](https://github.com/llozano/lambda-stream-response/blob/main/src/report.ts).
+
+    ```ts
+    declare global {
+      // eslint-disable-next-line @typescript-eslint/no-namespace
+      namespace awslambda {
+        // eslint-disable-next-line @typescript-eslint/no-namespace
+        export namespace HttpResponseStream {
+          function from(writable: Writable, metadata: unknown): Writable;
+        }
+
+        export type StreamifyHandler<TEvent> = (
+          event: TEvent,
+          responseStream: Writable,
+          context: Context,
+        ) => Promise<unknown>;
+
+        export function streamifyResponse<TEvent, TResponse>(
+          handler: StreamifyHandler<TEvent>,
+        ): Handler<TEvent, TResponse>;
+      }
+    }
+    ```

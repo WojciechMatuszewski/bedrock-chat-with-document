@@ -566,7 +566,11 @@ class DocumentsEventsAPI extends aws_appsync.EventApi {
   getApiKey: () => string;
   getEventsEndpoint: () => string;
 
-  namespaceName = "events";
+  eventsNamespace = "events";
+  eventsChannel = `${this.eventsNamespace}/document`;
+
+  responseNamespace = "response";
+  responseChannelPrefix = `${this.responseNamespace}/document`;
 
   constructor(scope: Construct) {
     super(scope, "DocumentsEventsAPI", {
@@ -586,7 +590,8 @@ class DocumentsEventsAPI extends aws_appsync.EventApi {
       },
     });
 
-    this.addChannelNamespace(this.namespaceName);
+    this.addChannelNamespace(this.eventsNamespace);
+    this.addChannelNamespace(this.responseNamespace);
 
     this.getApiKey = () => {
       const apiKey = this.apiKeys[DocumentsEventsAPI.apiKeyName]?.attrApiKey;
@@ -650,7 +655,7 @@ class DocumentsStatusPipe extends aws_pipes.Pipe {
         documentsEventsAPIDestination,
         {
           inputTransformation: aws_pipes.InputTransformation.fromObject({
-            channel: `/${documentsEventsAPI.namespaceName}/documents`,
+            channel: documentsEventsAPI.eventsChannel,
             events: [
               JSON.stringify({
                 id: "<$.dynamodb.NewImage.id.S>",
