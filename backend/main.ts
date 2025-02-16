@@ -62,6 +62,8 @@ class AppStack extends Stack {
       knowledgeBase,
     });
 
+    const documentsEventsAPI = new DocumentsEventsAPI(this);
+
     const getUploadUrlFunction = new LambdaFunction(this, "GetUploadUrl", {
       entry: fileURLToPath(
         import.meta.resolve("./functions/get-upload-url/handler.ts"),
@@ -73,9 +75,45 @@ class AppStack extends Stack {
     });
     documentsBucket.grantPut(getUploadUrlFunction);
 
-    const documentsAPI = new DocumentsAPI(this, { getUploadUrlFunction });
-    const documentsEventsAPI = new DocumentsEventsAPI(this);
+    const chatWithDocumentFunction = new LambdaFunction(
+      this,
+      "ChatWithDocument",
+      {
+        entry: fileURLToPath(
+          import.meta.resolve("./functions/chat-with-document/handler.ts"),
+        ),
+        environment: {
+          APPSYNC_EVENTS_API_URL: documentsEventsAPI.getEventsEndpoint(),
+          APPSYNC_EVENTS_API_KEY: documentsEventsAPI.getApiKey(),
+          APPSYNC_RESPONSE_CHANNEL_PREFIX:
+            documentsEventsAPI.responseChannelPrefix,
 
+          KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
+          MODEL_ARN:
+            genai.bedrock.BedrockFoundationModel.ANTHROPIC_CLAUDE_INSTANT_V1_2.asArn(
+              this,
+            ),
+        },
+        timeout: Duration.seconds(10),
+      },
+    );
+    knowledgeBase.grantRetrieveAndGenerate(chatWithDocumentFunction);
+    knowledgeBase.grantRetrieve(chatWithDocumentFunction);
+    chatWithDocumentFunction.addToRolePolicy(
+      new aws_iam.PolicyStatement({
+        effect: aws_iam.Effect.ALLOW,
+        actions: [""],
+      }),
+    );
+
+    genai.bedrock.BedrockFoundationModel.ANTHROPIC_CLAUDE_INSTANT_V1_2.grantInvoke(
+      chatWithDocumentFunction,
+    );
+
+    const documentsAPI = new DocumentsAPI(this, {
+      getUploadUrlFunction,
+      chatWithDocumentFunction,
+    });
     const documentsTable = new DocumentsTable(this);
 
     const documentsStatusPipe = new DocumentsStatusPipe(this, {
@@ -192,7 +230,13 @@ class BedrockDataSource extends genai.bedrock.S3DataSource {
 class DocumentsAPI extends aws_apigatewayv2.HttpApi {
   constructor(
     scope: Construct,
-    { getUploadUrlFunction }: { getUploadUrlFunction: LambdaFunction },
+    {
+      getUploadUrlFunction,
+      chatWithDocumentFunction,
+    }: {
+      getUploadUrlFunction: LambdaFunction;
+      chatWithDocumentFunction: LambdaFunction;
+    },
   ) {
     super(scope, "BedrockChatWithDocumentAPI", {
       corsPreflight: {
@@ -211,6 +255,15 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
       integration: new HttpLambdaIntegration(
         "GetUploadUrlIntegration",
         getUploadUrlFunction,
+      ),
+    });
+
+    this.addRoutes({
+      path: "/document/{documentId}/chat",
+      methods: [aws_apigatewayv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration(
+        "ChatWithDocumentFunction",
+        chatWithDocumentFunction,
       ),
     });
   }
@@ -535,6 +588,10 @@ class LambdaFunction extends aws_lambda_nodejs.NodejsFunction {
       handler: "handler",
       runtime: aws_lambda.Runtime.NODEJS_22_X,
       architecture: aws_lambda.Architecture.ARM_64,
+      bundling: {
+        minify: true,
+        externalModules: [],
+      },
     });
   }
 }
@@ -561,7 +618,7 @@ class DocumentsTable extends aws_dynamodb.TableV2 {
 }
 
 class DocumentsEventsAPI extends aws_appsync.EventApi {
-  static apiKeyName = "DocumentsEventsAPIApiKey";
+  static apiKeyName = "DocumentsEventsAPIApiKey2";
 
   getApiKey: () => string;
   getEventsEndpoint: () => string;

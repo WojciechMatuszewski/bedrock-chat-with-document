@@ -5,7 +5,6 @@ import { parser } from "@aws-lambda-powertools/parser/middleware";
 import { APIGatewayProxyEventV2Schema } from "@aws-lambda-powertools/parser/schemas";
 import {
   BedrockAgentRuntimeClient,
-  RetrieveAndGenerateCommand,
   RetrieveAndGenerateStreamCommand,
 } from "@aws-sdk/client-bedrock-agent-runtime";
 import middy from "@middy/core";
@@ -26,7 +25,7 @@ const env = EnvSchema.parse(process.env);
 
 const PayloadSchema = APIGatewayProxyEventV2Schema.extend({
   body: JSONStringified(ChatWithDocumentPayloadSchema),
-  pathParameters: z.object({ id: z.string() }),
+  pathParameters: z.object({ documentId: z.string() }),
 });
 
 type Payload = z.infer<typeof PayloadSchema>;
@@ -34,10 +33,12 @@ type Payload = z.infer<typeof PayloadSchema>;
 const client = new BedrockAgentRuntimeClient({});
 
 const lambdaHandler = async (payload: Payload) => {
-  const documentId = payload.pathParameters.id;
+  const documentId = payload.pathParameters.documentId;
   const text = payload.body.text;
 
-  const result = await client.send(
+  logger.info("Invoking bedrock", { documentId, text });
+
+  const bedrockResult = await client.send(
     new RetrieveAndGenerateStreamCommand({
       input: { text },
       retrieveAndGenerateConfiguration: {
@@ -60,13 +61,14 @@ const lambdaHandler = async (payload: Payload) => {
       },
     }),
   );
-
-  if (!result.stream) {
+  if (!bedrockResult.stream) {
     return;
   }
 
-  for await (const chunk of result.stream) {
-    void fetch(env.APPSYNC_EVENTS_API_URL, {
+  for await (const chunk of bedrockResult.stream) {
+    logger.info("Invoking AppSync Events APIs", { text: chunk.output?.text });
+
+    const response = await fetch(env.APPSYNC_EVENTS_API_URL, {
       body: JSON.stringify({
         channel: `${env.APPSYNC_RESPONSE_CHANNEL_PREFIX}/${documentId}`,
         events: [JSON.stringify({ text: chunk.output?.text })],
@@ -77,9 +79,16 @@ const lambdaHandler = async (payload: Payload) => {
         "Content-Type": "application/json",
       },
     });
+
+    logger.info("Got response from AppSync Events API", {
+      status: response.status,
+      headers: response.headers,
+    });
   }
 
-  return;
+  return {
+    status: "OK",
+  };
 };
 
 export const handler = middy(lambdaHandler)
