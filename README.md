@@ -156,3 +156,36 @@
       }
     }
     ```
+
+- I was thinking how I could guarantee that the AWS Lambda returns fast, but then processes the stream from the Bedrock in the background.
+
+  - **The only thing that came to my mind was the `callbackWaitsForEmptyEventLoop` property on the `context`**
+
+    - As I understand it, if you set it to `false`, the AWS Lambda runtime _will not_ wait for the event loop to be empty to return the response from the function. An ideal use-case for what I'm trying to accomplish.
+
+      - **But this approach is now without its drawbacks**. Keep in mind that AWS Lambda freezes the container and all the network connections after some time. **This means that the background work might not finish as expected**.
+
+      - As an alternative, I could use the ["stream response"](https://docs.aws.amazon.com/lambda/latest/api/API_InvokeWithResponseStream.html) AWS Lambda invocation type, but I really do not like the DX in TypeScript.
+
+- I spent some time fighting with Next.js environmental variables.
+
+  - **I thought that prefixing my variables with `NEXT_PUBLIC_` will make that variable "visible" both inside the node process AND the browser**. I was correct in my understanding, **but I did not understand HOW they are made "visible"**.
+
+    - Next.js **will replace any references to `NEXT_PUBLIC_` in the browser with their values**. This means **dynamic references won't work!**
+
+      - This means that **using `zod` to parse the `NEXT_PUBLIC_` env variables won't work as expected**. The `parse` call will succeed in the "server" context, but fail on the browser. It will fail because you never refer to `process.env.` while creating the zod schema.
+
+        ```ts
+        z.object({ NEXT_PUBLIC_FOO: z.string() }).parse(process.env); // This will not work!
+        ```
+
+        To make it work, you have to get creative. Essentially, we need to refer to `process.env.NEXT_PUBLIC_FOO` at some point while creating the schema. Here is the version that will work.
+
+        ```ts
+        z.object({
+          NEXT_PUBLIC_FOO: z.preprocess(
+            () => process.env.NEXT_PUBLIC_FOO,
+            z.string(),
+          ),
+        }).parse(process.env); // This will not work!
+        ```

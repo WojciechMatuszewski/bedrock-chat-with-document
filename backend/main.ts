@@ -102,12 +102,13 @@ class AppStack extends Stack {
     chatWithDocumentFunction.addToRolePolicy(
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
-        actions: [""],
+        actions: ["bedrock:InvokeModelWithResponseStream"],
+        resources: [
+          genai.bedrock.BedrockFoundationModel.ANTHROPIC_CLAUDE_INSTANT_V1_2.asArn(
+            this,
+          ),
+        ],
       }),
-    );
-
-    genai.bedrock.BedrockFoundationModel.ANTHROPIC_CLAUDE_INSTANT_V1_2.grantInvoke(
-      chatWithDocumentFunction,
     );
 
     const documentsAPI = new DocumentsAPI(this, {

@@ -8,6 +8,7 @@ import {
   RetrieveAndGenerateStreamCommand,
 } from "@aws-sdk/client-bedrock-agent-runtime";
 import middy from "@middy/core";
+import type { Context } from "aws-lambda";
 import { ChatWithDocumentPayloadSchema } from "transport";
 import { z } from "zod";
 
@@ -32,7 +33,9 @@ type Payload = z.infer<typeof PayloadSchema>;
 
 const client = new BedrockAgentRuntimeClient({});
 
-const lambdaHandler = async (payload: Payload) => {
+const lambdaHandler = async (payload: Payload, context: Context) => {
+  context.callbackWaitsForEmptyEventLoop = false;
+
   const documentId = payload.pathParameters.documentId;
   const text = payload.body.text;
 
@@ -68,7 +71,7 @@ const lambdaHandler = async (payload: Payload) => {
   for await (const chunk of bedrockResult.stream) {
     logger.info("Invoking AppSync Events APIs", { text: chunk.output?.text });
 
-    const response = await fetch(env.APPSYNC_EVENTS_API_URL, {
+    void fetch(env.APPSYNC_EVENTS_API_URL, {
       body: JSON.stringify({
         channel: `${env.APPSYNC_RESPONSE_CHANNEL_PREFIX}/${documentId}`,
         events: [JSON.stringify({ text: chunk.output?.text })],
@@ -78,11 +81,6 @@ const lambdaHandler = async (payload: Payload) => {
         "X-Api-Key": env.APPSYNC_EVENTS_API_KEY,
         "Content-Type": "application/json",
       },
-    });
-
-    logger.info("Got response from AppSync Events API", {
-      status: response.status,
-      headers: response.headers,
     });
   }
 
