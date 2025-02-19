@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { uploadDocumentAction } from "./lib/actions";
 import { Amplify } from "aws-amplify";
-import { events } from "aws-amplify/api";
 import type { EventsChannel } from "aws-amplify/api";
+import { events } from "aws-amplify/api";
+import { useActionState, useEffect, useState } from "react";
+import { z } from "zod";
+import { chatWithDocumentAction, uploadDocumentAction } from "./lib/actions";
 import { getEnv } from "./lib/env";
 
 /**
@@ -23,7 +24,7 @@ Amplify.configure({
 });
 
 export default function Home() {
-  const [, formAction, isPending] = useActionState(
+  const [, action, isPending] = useActionState(
     (_: unknown, formData: FormData) => uploadDocumentAction(formData),
     null,
   );
@@ -31,7 +32,7 @@ export default function Home() {
 
   return (
     <main>
-      <form action={formAction}>
+      <form action={action}>
         <fieldset>
           <legend>Upload file</legend>
           <input
@@ -45,6 +46,7 @@ export default function Home() {
           <button disabled={isPending}>Submit</button>
         </fieldset>
       </form>
+      <hr />
       <article>
         <form>
           <fieldset>
@@ -71,18 +73,69 @@ export default function Home() {
   );
 }
 
+export type Message = {
+  id: string;
+  source: "user" | "ai";
+  text: string;
+  timestamp: number;
+};
+
+const DocumentResponseMessageSchema = z.object({
+  id: z.string(),
+  event: z.object({
+    text: z.string().optional(),
+  }),
+});
+
 function DocumentChat({ documentId }: { documentId: string }) {
-  const [messages, setMessages] = useState([]);
+  const [aiMessages, setAIMessages] = useState<Message[]>([]);
+  const [userMessages, action, isPending] = useActionState(
+    chatWithDocumentAction,
+    [],
+  );
 
   useEffect(() => {
     let channel: EventsChannel | undefined = undefined;
 
     const connectAndSubscribe = async () => {
-      channel = await events.connect(`responses/document/${documentId}`);
+      channel = await events.connect(`response/document/${documentId}`);
 
       channel.subscribe({
         next: (data) => {
-          console.log("received", data);
+          const {
+            /**
+             * TODO: The index appears to be the same every time we sent the message?
+             */
+            id,
+            event: { text },
+          } = DocumentResponseMessageSchema.parse(data);
+          if (!text) {
+            return;
+          }
+          setAIMessages((allAIMessages) => {
+            const lastAIMessageIndex = allAIMessages.findIndex((message) => {
+              return message.id === id;
+            });
+            console.log({ id, lastAIMessageIndex });
+
+            if (lastAIMessageIndex === -1) {
+              return [
+                ...allAIMessages,
+                { source: "ai", text, timestamp: Date.now(), id },
+              ];
+            }
+
+            const currentAIMessage = allAIMessages.at(lastAIMessageIndex);
+            if (!currentAIMessage) {
+              return allAIMessages;
+            }
+
+            const newMessages = allAIMessages.with(lastAIMessageIndex, {
+              ...currentAIMessage,
+              text: currentAIMessage.text.concat(text),
+            });
+            return newMessages;
+          });
         },
         error: (err) => console.error("error", err),
       });
@@ -97,15 +150,39 @@ function DocumentChat({ documentId }: { documentId: string }) {
     };
   }, [documentId]);
 
+  const allMessages = [...userMessages, ...aiMessages].toSorted((a, b) => {
+    return a.timestamp - b.timestamp;
+  });
+
   return (
     <div>
       <div
-        style={{ maxHeight: 300, height: "100%", width: 400, padding: 16 }}
-      ></div>
-      <form>
+        style={{
+          maxHeight: 300,
+          height: "100%",
+          width: 400,
+          padding: 16,
+          overflow: "auto",
+        }}
+      >
+        <ul>
+          {allMessages.map((message, index) => {
+            return (
+              <li key={index}>
+                {message.text} | {message.timestamp}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      <form action={action}>
         <fieldset>
           <label htmlFor={"text"}>Your input</label>
-          <textarea id="text" />
+          <textarea id="text" name="text" />
+          <input type="hidden" name="documentId" value={documentId} />
+          <button type="submit" disabled={isPending}>
+            Submit
+          </button>
         </fieldset>
       </form>
     </div>

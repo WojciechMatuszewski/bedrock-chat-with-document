@@ -159,13 +159,11 @@
 
 - I was thinking how I could guarantee that the AWS Lambda returns fast, but then processes the stream from the Bedrock in the background.
 
-  - **The only thing that came to my mind was the `callbackWaitsForEmptyEventLoop` property on the `context`**
+  - **The only thing that came to my mind was the `callbackWaitsForEmptyEventLoop` property on the `context` BUT THIS SETTING IS ONLY RELEVANT TO CALLBACK-STYLE handlers!**
 
-    - As I understand it, if you set it to `false`, the AWS Lambda runtime _will not_ wait for the event loop to be empty to return the response from the function. An ideal use-case for what I'm trying to accomplish.
+    - This means, that any network requests that you fire will freeze when the handler exists. That is the behavior I saw.
 
-      - **But this approach is now without its drawbacks**. Keep in mind that AWS Lambda freezes the container and all the network connections after some time. **This means that the background work might not finish as expected**.
-
-      - As an alternative, I could use the ["stream response"](https://docs.aws.amazon.com/lambda/latest/api/API_InvokeWithResponseStream.html) AWS Lambda invocation type, but I really do not like the DX in TypeScript.
+    - As an alternative, I could use the ["stream response"](https://docs.aws.amazon.com/lambda/latest/api/API_InvokeWithResponseStream.html) AWS Lambda invocation type, but I really do not like the DX in TypeScript.
 
 - I spent some time fighting with Next.js environmental variables.
 
@@ -189,3 +187,7 @@
           ),
         }).parse(process.env); // This will not work!
         ```
+
+- Using _local state_ with the _action state_ is possible!
+
+  - All you have to do is to combine them. In my case, sorting by `timestamp` did it.

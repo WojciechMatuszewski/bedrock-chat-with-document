@@ -3,6 +3,7 @@
 import * as z from "zod";
 import { getEnv } from "./env";
 import { GetObjectUrlResponseSchema } from "transport";
+import type { Message } from "../page";
 
 const GetUploadUrlFormDataSchema = z.object({
   file: z.instanceof(File),
@@ -34,6 +35,37 @@ export async function uploadDocumentAction(formData: FormData) {
   uploadFormData.set("file", file);
 
   await fetch(url, { method: "POST", body: uploadFormData });
+}
+
+const ChatWithDocumentFormDataSchema = z.object({
+  text: z.string(),
+  documentId: z.string(),
+});
+
+export async function chatWithDocumentAction(
+  prevMessages: Array<Message>,
+  formData: FormData,
+): Promise<Array<Message>> {
+  const { text, documentId } = ChatWithDocumentFormDataSchema.parse(
+    Object.fromEntries(formData.entries()),
+  );
+
+  const endpointUrl = new URL(
+    `/document/${documentId}/chat`,
+    getEnv().API_ROOT_URL,
+  );
+
+  const now = Date.now();
+
+  void fetch(endpointUrl, {
+    body: JSON.stringify({ text }),
+    method: "POST",
+  });
+
+  return [
+    ...prevMessages,
+    { source: "user", text: text, timestamp: now, id: crypto.randomUUID() },
+  ];
 }
 
 async function fetch(...parameters: Parameters<typeof globalThis.fetch>) {
