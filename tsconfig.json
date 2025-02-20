@@ -7,5 +7,7 @@
     { "path": "./backend" },
     { "path": "./frontend" },
     { "path": "./packages/transport" }
-  ]
+  ],
+  "exclude": ["node_modules"],
+  "include": []
 }

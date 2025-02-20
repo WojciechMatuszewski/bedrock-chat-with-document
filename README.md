@@ -191,3 +191,7 @@
 - Using _local state_ with the _action state_ is possible!
 
   - All you have to do is to combine them. In my case, sorting by `timestamp` did it.
+
+- I find it interesting, that the `params` you get in Next.js "page" are asynchronous. [Link to docs](https://nextjs.org/docs/app/api-reference/file-conventions/page#props).
+
+  - **This change potentially speeds the SSR render**. Framework can parallelize rendering components that rely on request-specific data. [This section in the announcement blog post](https://nextjs.org/blog/next-15#async-request-apis-breaking-change) explains it well.

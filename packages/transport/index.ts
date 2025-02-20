@@ -21,3 +21,15 @@ export const ChatWithDocumentPayloadSchema = z.object({
 export type ChatWithDocumentPayload = z.infer<
   typeof ChatWithDocumentPayloadSchema
 >;
+
+export const DocumentSchema = z.object({
+  id: z.string(),
+  status: z.enum(["PENDING", "READY", "FAILED"]),
+  originalFileName: z.string(),
+});
+
+export type Document = z.infer<typeof DocumentSchema>;
+
+export const ListDocumentsResponseSchema = z.array(DocumentSchema);
+
+export type ListDocumentsResponse = z.infer<typeof ListDocumentsResponseSchema>;

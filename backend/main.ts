@@ -64,6 +64,8 @@ class AppStack extends Stack {
 
     const documentsEventsAPI = new DocumentsEventsAPI(this);
 
+    const documentsTable = new DocumentsTable(this);
+
     const getUploadUrlFunction = new LambdaFunction(this, "GetUploadUrl", {
       entry: fileURLToPath(
         import.meta.resolve("./functions/get-upload-url/handler.ts"),
@@ -74,6 +76,17 @@ class AppStack extends Stack {
       timeout: Duration.seconds(15),
     });
     documentsBucket.grantPut(getUploadUrlFunction);
+
+    const listDocumentsFunction = new LambdaFunction(this, "ListDocuments", {
+      entry: fileURLToPath(
+        import.meta.resolve("./functions/list-documents/handler.ts"),
+      ),
+      environment: {
+        DOCUMENTS_TABLE_NAME: documentsTable.tableName,
+      },
+      timeout: Duration.seconds(10),
+    });
+    documentsTable.grantReadData(listDocumentsFunction);
 
     const chatWithDocumentFunction = new LambdaFunction(
       this,
@@ -114,8 +127,8 @@ class AppStack extends Stack {
     const documentsAPI = new DocumentsAPI(this, {
       getUploadUrlFunction,
       chatWithDocumentFunction,
+      listDocumentsFunction,
     });
-    const documentsTable = new DocumentsTable(this);
 
     const documentsStatusPipe = new DocumentsStatusPipe(this, {
       documentsTable,
@@ -234,9 +247,11 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
     {
       getUploadUrlFunction,
       chatWithDocumentFunction,
+      listDocumentsFunction,
     }: {
       getUploadUrlFunction: LambdaFunction;
       chatWithDocumentFunction: LambdaFunction;
+      listDocumentsFunction: LambdaFunction;
     },
   ) {
     super(scope, "BedrockChatWithDocumentAPI", {
@@ -265,6 +280,15 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
       integration: new HttpLambdaIntegration(
         "ChatWithDocumentFunction",
         chatWithDocumentFunction,
+      ),
+    });
+
+    this.addRoutes({
+      path: "/documents",
+      methods: [aws_apigatewayv2.HttpMethod.GET],
+      integration: new HttpLambdaIntegration(
+        "ListDocumentsFunction",
+        listDocumentsFunction,
       ),
     });
   }
