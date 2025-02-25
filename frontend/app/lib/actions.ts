@@ -58,7 +58,7 @@ export async function chatWithDocumentAction(
 
   const now = Date.now();
 
-  void fetchData(endpointUrl, {
+  await fetchData(endpointUrl, {
     body: JSON.stringify({ text }),
     method: "POST",
   });

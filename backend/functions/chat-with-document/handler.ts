@@ -8,6 +8,7 @@ import {
   RetrieveAndGenerateStreamCommand,
 } from "@aws-sdk/client-bedrock-agent-runtime";
 import middy from "@middy/core";
+import type { Context } from "aws-lambda";
 import { ChatWithDocumentPayloadSchema } from "transport";
 import { z } from "zod";
 
@@ -32,7 +33,7 @@ type Payload = z.infer<typeof PayloadSchema>;
 
 const client = new BedrockAgentRuntimeClient({});
 
-const lambdaHandler = async (payload: Payload) => {
+const lambdaHandler = async (payload: Payload, context: Context) => {
   const documentId = payload.pathParameters.documentId;
   const text = payload.body.text;
 
@@ -71,7 +72,12 @@ const lambdaHandler = async (payload: Payload) => {
     const response = await fetch(env.APPSYNC_EVENTS_API_URL, {
       body: JSON.stringify({
         channel: `${env.APPSYNC_RESPONSE_CHANNEL_PREFIX}/${documentId}`,
-        events: [JSON.stringify({ text: chunk.output?.text })],
+        events: [
+          JSON.stringify({
+            text: chunk.output?.text,
+            id: context.awsRequestId,
+          }),
+        ],
       }),
       method: "POST",
       headers: {

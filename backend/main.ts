@@ -643,7 +643,7 @@ class DocumentsTable extends aws_dynamodb.TableV2 {
 }
 
 class DocumentsEventsAPI extends aws_appsync.EventApi {
-  static apiKeyName = "DocumentsEventsAPIApiKey2";
+  static apiKeyName = "DocumentsEventsAPIApiKey3";
 
   getApiKey: () => string;
   getEventsEndpoint: () => string;

@@ -195,3 +195,13 @@
 - I find it interesting, that the `params` you get in Next.js "page" are asynchronous. [Link to docs](https://nextjs.org/docs/app/api-reference/file-conventions/page#props).
 
   - **This change potentially speeds the SSR render**. Framework can parallelize rendering components that rely on request-specific data. [This section in the announcement blog post](https://nextjs.org/blog/next-15#async-request-apis-breaking-change) explains it well.
+
+- I was considering using the `use` function to handle AppSync Events subscription, but the `use` API is not built for that use-case.
+
+  - The `use` function is mainly for data-fetching. For subscriptions, we also need a way to cleanup stale resources – `useEffect` is still the way to go here.
+
+- Be mindful of async code in `useEffect` and potential race conditions!
+
+  - I've been using `tanstack/query` for so long now, that I forgot that these can occur.
+
+    - If you are fetching data, perhaps you can use the `AbortController` API?
