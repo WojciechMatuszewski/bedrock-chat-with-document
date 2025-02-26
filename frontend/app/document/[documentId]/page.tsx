@@ -1,6 +1,6 @@
 "use client";
 
-import { type EventsChannel, events } from "aws-amplify/api";
+import { type EventsChannel, events } from "../../lib/amplify";
 import {
   use,
   useActionState,
@@ -11,19 +11,6 @@ import {
 } from "react";
 import { z } from "zod";
 import { chatWithDocumentAction } from "../../lib/actions";
-import { Amplify } from "aws-amplify";
-import { getEnv } from "../../lib/env";
-
-Amplify.configure({
-  API: {
-    Events: {
-      endpoint: getEnv().APPSYNC_EVENTS_API_URL,
-      region: "eu-central-1",
-      defaultAuthMode: "apiKey",
-      apiKey: getEnv().APPSYNC_EVENTS_API_KEY,
-    },
-  },
-});
 
 export default function DocumentPage({
   params,

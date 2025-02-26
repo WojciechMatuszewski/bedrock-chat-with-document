@@ -205,3 +205,20 @@
   - I've been using `tanstack/query` for so long now, that I forgot that these can occur.
 
     - If you are fetching data, perhaps you can use the `AbortController` API?
+
+- **The `cache` function has no effect in _client components_**.
+
+  ```tsx
+  // 🚩 Wrong: cache has no effect in client components
+  "use client";
+  import { cache } from "react";
+
+  function ClientComponent() {
+    const getData = cache(fetchData); // This won't work as expected
+    // ...
+  }
+  ```
+
+- **It is very easy to create infinite loops with the `use` function**.
+
+  - You have to ensure the _reference_ to the underlying promise is the same across re-renders.

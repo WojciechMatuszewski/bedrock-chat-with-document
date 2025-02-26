@@ -2,7 +2,7 @@ import { cache } from "react";
 import { getEnv } from "./env";
 import { ListDocumentsResponseSchema } from "transport";
 
-export const listDocuments = cache(async function listDocument() {
+export const listDocuments = cache(async () => {
   const url = new URL("/documents", getEnv().API_ROOT_URL);
   return await fetchData(url, { method: "GET" }).then((data) => {
     return ListDocumentsResponseSchema.parse(data);

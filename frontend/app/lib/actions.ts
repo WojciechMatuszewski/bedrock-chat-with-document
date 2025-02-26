@@ -11,6 +11,8 @@ const GetUploadUrlFormDataSchema = z.object({
 });
 
 export async function uploadDocumentAction(formData: FormData) {
+  console.log("Getting document upload URL");
+
   const { file } = GetUploadUrlFormDataSchema.parse(
     Object.fromEntries(formData.entries()),
   );
@@ -34,6 +36,8 @@ export async function uploadDocumentAction(formData: FormData) {
     uploadFormData.set(key, value);
   });
   uploadFormData.set("file", file);
+
+  console.log("Uploading the document");
 
   await fetchData(url, { method: "POST", body: uploadFormData });
 }
