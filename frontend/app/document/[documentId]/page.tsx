@@ -1,16 +1,16 @@
 "use client";
 
-import { type EventsChannel, events } from "../../lib/amplify";
 import {
   use,
   useActionState,
+  useCallback,
   useEffect,
   useOptimistic,
-  useRef,
   useState,
 } from "react";
 import { z } from "zod";
 import { chatWithDocumentAction } from "../../lib/actions";
+import { type EventsChannel, events } from "../../lib/amplify";
 
 export default function DocumentPage({
   params,
@@ -23,13 +23,10 @@ export default function DocumentPage({
 }
 
 function DocumentChat({ documentId }: { documentId: string }) {
-  const [aiMessages, setAiMessages] = useState<Message[]>([]);
-
   const [userMessages, action, isPending] = useActionState(
     chatWithDocumentAction,
     [],
   );
-
   const [optimisticMessages, addOptimisticMessage] = useOptimistic(
     userMessages,
     (state, newMessage: Message) => {
@@ -37,34 +34,7 @@ function DocumentChat({ documentId }: { documentId: string }) {
     },
   );
 
-  const handleOnDocumentMessage = (documentMessage: DocumentMessage) => {
-    const now = Date.now();
-
-    setAiMessages((allAiMessages) => {
-      const correspondingAiMessageIndex = allAiMessages.findIndex((message) => {
-        return message.id === documentMessage.id;
-      });
-      if (correspondingAiMessageIndex === -1) {
-        return allAiMessages.concat([
-          {
-            id: documentMessage.id,
-            source: "ai",
-            text: documentMessage.text,
-            timestamp: now,
-          },
-        ]);
-      }
-
-      const existingAiMessage = aiMessages[correspondingAiMessageIndex];
-      const newAiMessages = aiMessages.with(correspondingAiMessageIndex, {
-        ...existingAiMessage,
-        text: existingAiMessage.text + documentMessage.text,
-      });
-      return newAiMessages;
-    });
-  };
-
-  useDocumentResponses({ documentId, onMessage: handleOnDocumentMessage });
+  const aiMessages = useAIDocumentMessages({ documentId });
 
   const allMessages = [...optimisticMessages, ...aiMessages].toSorted(
     (a, b) => {
@@ -74,6 +44,9 @@ function DocumentChat({ documentId }: { documentId: string }) {
 
   return (
     <div className={"flex flex-col gap-4"}>
+      <h2>
+        Chatting with <code>{documentId}</code>
+      </h2>
       <div className="border border-red-500 overflow-auto h-[300px] w-[400px] p-4">
         <ul className={"grid grid-cols-[min-content_1fr] gap-2"}>
           {allMessages.map((message, index) => {
@@ -140,17 +113,38 @@ const DocumentMessageSchema = z.object({
   }),
 });
 
-function useDocumentResponses({
-  documentId,
-  onMessage,
-}: {
-  documentId: string;
-  onMessage: (message: DocumentMessage) => void;
-}) {
-  const latestOnMessageRef = useRef(onMessage);
-  useEffect(() => {
-    latestOnMessageRef.current = onMessage;
-  });
+function useAIDocumentMessages({ documentId }: { documentId: string }) {
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  const handleOnDocumentMessage = useCallback(
+    (documentMessage: DocumentMessage) => {
+      const now = Date.now();
+
+      setMessages((allMessages) => {
+        const correspondingAiMessageIndex = allMessages.findIndex((message) => {
+          return message.id === documentMessage.id;
+        });
+        if (correspondingAiMessageIndex === -1) {
+          return allMessages.concat([
+            {
+              id: documentMessage.id,
+              source: "ai",
+              text: documentMessage.text,
+              timestamp: now,
+            },
+          ]);
+        }
+
+        const existingAiMessage = allMessages[correspondingAiMessageIndex];
+        const newAiMessages = allMessages.with(correspondingAiMessageIndex, {
+          ...existingAiMessage,
+          text: existingAiMessage.text + documentMessage.text,
+        });
+        return newAiMessages;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     let channel: EventsChannel | undefined = undefined;
@@ -177,10 +171,7 @@ function useDocumentResponses({
             return;
           }
 
-          latestOnMessageRef.current({
-            id,
-            text,
-          });
+          handleOnDocumentMessage({ id, text });
         },
         error: console.error,
       });
@@ -193,4 +184,6 @@ function useDocumentResponses({
       channel?.close();
     };
   }, [documentId]);
+
+  return messages;
 }

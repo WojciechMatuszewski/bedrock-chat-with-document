@@ -10,6 +10,7 @@ export type GetObjectUrlPayload = z.infer<typeof GetObjectUrlPayloadSchema>;
 export const GetObjectUrlResponseSchema = z.object({
   url: z.string(),
   fields: z.record(z.string(), z.string()),
+  documentId: z.string(),
 });
 
 export type GetObjectUrlResponse = z.infer<typeof GetObjectUrlResponseSchema>;

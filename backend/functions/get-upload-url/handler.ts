@@ -26,10 +26,10 @@ const s3Client = new S3Client({});
 const lambdaHandler = async (
   payload: GetObjectUrlPayload,
 ): Promise<GetObjectUrlResponse> => {
-  const id = ulid();
+  const documentId = ulid();
 
   const newFileName = "data";
-  const key = `${id}/${newFileName}`;
+  const key = `${documentId}/${newFileName}`;
 
   const { url, fields } = await createPresignedPost(s3Client, {
     Bucket: env.BUCKET_NAME,
@@ -38,19 +38,19 @@ const lambdaHandler = async (
       ["eq", "$Content-Type", "text/plain"],
       ["eq", "$x-amz-meta-original_file_name", payload.name],
       ["eq", "$x-amz-meta-file_name", newFileName],
-      ["eq", "$x-amz-meta-id", id],
+      ["eq", "$x-amz-meta-id", documentId],
     ],
     Fields: {
       "Content-Type": "text/plain",
       "x-amz-meta-original_file_name": payload.name,
       "x-amz-meta-file_name": newFileName,
-      "x-amz-meta-id": id,
+      "x-amz-meta-id": documentId,
     },
     Expires: 20_000,
     Key: key,
   });
 
-  return { url, fields };
+  return { url, fields, documentId };
 };
 
 export const handler = middy(lambdaHandler)

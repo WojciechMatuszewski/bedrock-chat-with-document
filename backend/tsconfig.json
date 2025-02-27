@@ -6,6 +6,7 @@
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "emitDeclarationOnly": true,
-    "composite": true
+    "composite": true,
+    "verbatimModuleSyntax": true
   }
 }

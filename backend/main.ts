@@ -737,7 +737,7 @@ class DocumentsStatusPipe extends aws_pipes.Pipe {
         documentsEventsAPIDestination,
         {
           inputTransformation: aws_pipes.InputTransformation.fromObject({
-            channel: documentsEventsAPI.eventsChannel,
+            channel: `${documentsEventsAPI.eventsChannel}/<$.dynamodb.NewImage.id.S>`,
             events: [
               JSON.stringify({
                 id: "<$.dynamodb.NewImage.id.S>",

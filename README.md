@@ -222,3 +222,11 @@
 - **It is very easy to create infinite loops with the `use` function**.
 
   - You have to ensure the _reference_ to the underlying promise is the same across re-renders.
+
+- The `router.refresh` **will preserve the client-component state**.
+
+  - This is so nice!
+
+  - In addition, **navigating between different routes preserves the state of components within the layout**.
+
+    - It _really_ helps, especially when waiting for the documents "ready" status and changing routes at the same time.
