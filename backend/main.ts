@@ -88,6 +88,17 @@ class AppStack extends Stack {
     });
     documentsTable.grantReadData(listDocumentsFunction);
 
+    const deleteDocumentFunction = new LambdaFunction(this, "DeleteDocument", {
+      entry: fileURLToPath(
+        import.meta.resolve("./functions/delete-document/handler.ts"),
+      ),
+      environment: {
+        DOCUMENTS_TABLE_NAME: documentsTable.tableName,
+      },
+      timeout: Duration.seconds(10),
+    });
+    documentsTable.grantWriteData(listDocumentsFunction);
+
     const chatWithDocumentFunction = new LambdaFunction(
       this,
       "ChatWithDocument",
@@ -128,6 +139,7 @@ class AppStack extends Stack {
       getUploadUrlFunction,
       chatWithDocumentFunction,
       listDocumentsFunction,
+      deleteDocumentFunction,
     });
 
     const documentsStatusPipe = new DocumentsStatusPipe(this, {
@@ -248,10 +260,12 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
       getUploadUrlFunction,
       chatWithDocumentFunction,
       listDocumentsFunction,
+      deleteDocumentFunction,
     }: {
       getUploadUrlFunction: LambdaFunction;
       chatWithDocumentFunction: LambdaFunction;
       listDocumentsFunction: LambdaFunction;
+      deleteDocumentFunction: LambdaFunction;
     },
   ) {
     super(scope, "BedrockChatWithDocumentAPI", {
@@ -271,6 +285,15 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
       integration: new HttpLambdaIntegration(
         "GetUploadUrlIntegration",
         getUploadUrlFunction,
+      ),
+    });
+
+    this.addRoutes({
+      path: "/document/{documentId}",
+      methods: [aws_apigatewayv2.HttpMethod.DELETE],
+      integration: new HttpLambdaIntegration(
+        "DeleteDocumentFunction",
+        deleteDocumentFunction,
       ),
     });
 
