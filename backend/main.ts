@@ -5,6 +5,7 @@ import genai from "@cdklabs/generative-ai-cdk-constructs";
 import {
   ChunkingStrategy,
   type DataSource,
+  type IDataSource,
   type IKnowledgeBase,
 } from "@cdklabs/generative-ai-cdk-constructs/lib/cdk-lib/bedrock/index.js";
 import {
@@ -31,8 +32,15 @@ import {
   aws_stepfunctions,
   aws_stepfunctions_tasks,
 } from "aws-cdk-lib";
-import { CorsHttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
-import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import {
+  CorsHttpMethod,
+  HttpIntegrationSubtype,
+  ParameterMapping,
+} from "aws-cdk-lib/aws-apigatewayv2";
+import {
+  HttpLambdaIntegration,
+  HttpStepFunctionsIntegration,
+} from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type { ITableV2 } from "aws-cdk-lib/aws-dynamodb";
 import { HttpMethod } from "aws-cdk-lib/aws-events";
 import { RetentionDays } from "aws-cdk-lib/aws-logs";
@@ -40,6 +48,8 @@ import type { IBucket } from "aws-cdk-lib/aws-s3";
 import {
   type IStateMachine,
   JsonPath,
+  QueryLanguage,
+  type StateMachine,
   TaskInput,
 } from "aws-cdk-lib/aws-stepfunctions";
 import { DynamoAttributeValue } from "aws-cdk-lib/aws-stepfunctions-tasks";
@@ -88,17 +98,6 @@ class AppStack extends Stack {
     });
     documentsTable.grantReadData(listDocumentsFunction);
 
-    const deleteDocumentFunction = new LambdaFunction(this, "DeleteDocument", {
-      entry: fileURLToPath(
-        import.meta.resolve("./functions/delete-document/handler.ts"),
-      ),
-      environment: {
-        DOCUMENTS_TABLE_NAME: documentsTable.tableName,
-      },
-      timeout: Duration.seconds(10),
-    });
-    documentsTable.grantWriteData(listDocumentsFunction);
-
     const chatWithDocumentFunction = new LambdaFunction(
       this,
       "ChatWithDocument",
@@ -135,11 +134,18 @@ class AppStack extends Stack {
       }),
     );
 
+    const deleteDocumentStateMachine = new DeleteDocumentStateMachine(this, {
+      documentsBucket,
+      documentsTable,
+      dataSource,
+      knowledgeBase,
+    });
+
     const documentsAPI = new DocumentsAPI(this, {
       getUploadUrlFunction,
       chatWithDocumentFunction,
       listDocumentsFunction,
-      deleteDocumentFunction,
+      deleteDocumentStateMachine,
     });
 
     const documentsStatusPipe = new DocumentsStatusPipe(this, {
@@ -260,12 +266,12 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
       getUploadUrlFunction,
       chatWithDocumentFunction,
       listDocumentsFunction,
-      deleteDocumentFunction,
+      deleteDocumentStateMachine,
     }: {
       getUploadUrlFunction: LambdaFunction;
       chatWithDocumentFunction: LambdaFunction;
       listDocumentsFunction: LambdaFunction;
-      deleteDocumentFunction: LambdaFunction;
+      deleteDocumentStateMachine: StateMachine;
     },
   ) {
     super(scope, "BedrockChatWithDocumentAPI", {
@@ -291,9 +297,25 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
     this.addRoutes({
       path: "/document/{documentId}",
       methods: [aws_apigatewayv2.HttpMethod.DELETE],
-      integration: new HttpLambdaIntegration(
-        "DeleteDocumentFunction",
-        deleteDocumentFunction,
+      integration: new HttpStepFunctionsIntegration(
+        "DeleteDocumentIntegration",
+        {
+          stateMachine: deleteDocumentStateMachine,
+          subtype: HttpIntegrationSubtype.STEPFUNCTIONS_START_EXECUTION,
+          parameterMapping: new aws_apigatewayv2.ParameterMapping()
+            /**
+             * We have to use the `${}` form, since we have multiple brackets in the expression.
+             * Read more here -> https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-parameter-mapping.html
+             */
+            .custom("Input", '{"documentId": "${request.path.documentId}"}')
+            /**
+             * This field is required when we do not use the default "passthrough" mapping.
+             */
+            .custom(
+              "StateMachineArn",
+              deleteDocumentStateMachine.stateMachineArn,
+            ),
+        },
       ),
     });
 
@@ -494,6 +516,117 @@ export class DocumentsStateMachine extends aws_stepfunctions.StateMachine {
           )
           .next(updateDocumentInTableIngestionSuccess),
       ),
+    });
+  }
+}
+
+export class DeleteDocumentStateMachine extends aws_stepfunctions.StateMachine {
+  constructor(
+    scope: Construct,
+    {
+      documentsBucket,
+      documentsTable,
+      dataSource,
+      knowledgeBase,
+    }: {
+      documentsBucket: aws_s3.Bucket;
+      documentsTable: aws_dynamodb.ITableV2;
+      dataSource: IDataSource;
+      knowledgeBase: IKnowledgeBase;
+    },
+  ) {
+    const deleteDocumentInTable = new aws_stepfunctions_tasks.DynamoDeleteItem(
+      scope,
+      "DeleteDocumentInTable",
+      {
+        key: {
+          id: DynamoAttributeValue.fromString("{% $.documentId %}"),
+        },
+        table: documentsTable,
+      },
+    );
+
+    const deleteDocumentInS3 = new aws_stepfunctions_tasks.CallAwsService(
+      scope,
+      "DeleteDocumentInS3",
+      {
+        service: "s3",
+        action: "deleteObject",
+        parameters: {
+          Bucket: documentsBucket.bucketName,
+          Key: TaskInput.fromText(""),
+        },
+        iamResources: [documentsBucket.arnForObjects("*")],
+        iamAction: "s3:DeleteObject",
+      },
+    );
+
+    const deleteDocumentInDataSource =
+      new aws_stepfunctions_tasks.CallAwsService(
+        scope,
+        "DeleteDocumentInDatasource",
+        {
+          service: "bedrockAgent",
+          action: "deleteKnowledgeBaseDocuments",
+          parameters: {
+            KnowledgeBaseId: knowledgeBase.knowledgeBaseId,
+            DataSourceId: dataSource.dataSourceId,
+            DocumentIdentifiers: [
+              {
+                DataSourceType: "S3",
+                S3: {
+                  Uri: JsonPath.format(
+                    // "s3://{}/{}.data",
+                    // documentsBucket.bucketName,
+                    // JsonPath.stringAt("$.documentId"),
+                    "",
+                  ),
+                },
+              },
+            ],
+          },
+          iamResources: [knowledgeBase.knowledgeBaseArn],
+          additionalIamStatements: [
+            new aws_iam.PolicyStatement({
+              actions: ["bedrock:DeleteKnowledgeBaseDocuments"],
+              resources: [knowledgeBase.knowledgeBaseArn],
+              effect: aws_iam.Effect.ALLOW,
+            }),
+          ],
+          resultPath: JsonPath.DISCARD,
+        },
+      );
+
+    // const performOperationsStep = new aws_stepfunctions.Parallel(
+    //   scope,
+    //   "PerformOperations",
+    //   { resultPath: JsonPath.DISCARD },
+    // )
+    //   .branch(deleteDocumentInTable)
+    //   .branch(deleteDocumentInS3)
+    //   .branch(deleteDocumentInDataSource);
+
+    const computeVariablesStep = new aws_stepfunctions.Pass(
+      scope,
+      "ComputeVariables",
+      {
+        assign: {
+          bucketName: documentsBucket.bucketName,
+          /**
+           * TODO: We can't reference the `$bucketName` here. It's undefined.
+           */
+          s3DocumentKey: `{% $bucketName & "/" & $states.input.documentId & "/" & "data" %}`,
+          s3DocumentMetadataKey: `{% $bucketName & "/" & $states.input.documentId & "/" & "data.metadata.json" %}`,
+        },
+      },
+    );
+
+    const definitionBody =
+      aws_stepfunctions.DefinitionBody.fromChainable(computeVariablesStep);
+
+    super(scope, "DeleteDocumentStateMachine", {
+      definitionBody,
+      queryLanguage: QueryLanguage.JSONATA,
     });
   }
 }

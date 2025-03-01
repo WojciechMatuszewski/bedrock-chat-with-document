@@ -74,3 +74,19 @@ export async function chatWithDocumentAction(
     { source: "user", text: text, timestamp: now, id: crypto.randomUUID() },
   ];
 }
+
+const DeleteDocumentFormDataSchema = z.object({
+  documentId: z.string(),
+});
+
+export async function deleteDocumentAction(formData: FormData) {
+  const { documentId } = DeleteDocumentFormDataSchema.parse(
+    Object.fromEntries(formData.entries()),
+  );
+
+  const endpointUrl = new URL(`/document/${documentId}`, getEnv().API_ROOT_URL);
+
+  await fetchData(endpointUrl, {
+    method: "DELETE",
+  });
+}

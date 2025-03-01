@@ -1,7 +1,6 @@
 import { Logger } from "@aws-lambda-powertools/logger";
 import { injectLambdaContext } from "@aws-lambda-powertools/logger/middleware";
 import { parser } from "@aws-lambda-powertools/parser/middleware";
-import { ApiGatewayV2Envelope } from "@aws-lambda-powertools/parser/envelopes";
 import middy from "@middy/core";
 import { z } from "zod";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
@@ -12,6 +11,7 @@ import {
   type GetObjectUrlPayload,
   type GetObjectUrlResponse,
 } from "transport";
+import { ApiGatewayV2Envelope } from "@aws-lambda-powertools/parser/envelopes";
 
 const logger = new Logger();
 

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { use, useActionState, useEffect, useId, useState } from "react";
 import { DocumentSchema, type ListDocumentsResponse } from "transport";
 import { z } from "zod";
-import { uploadDocumentAction } from "../lib/actions";
+import { deleteDocumentAction, uploadDocumentAction } from "../lib/actions";
 import { events } from "../lib/amplify";
 import { type Document } from "transport";
 
@@ -22,22 +22,51 @@ export function Sidenav({
         <h2>Files</h2>
         <ul>
           {documents.map((document) => {
-            return (
-              <li key={document.id}>
-                <Link
-                  className={"inline-block underline"}
-                  href={`/document/${document.id}`}
-                >
-                  {document.originalFileName}
-                </Link>
-              </li>
-            );
+            return <DocumentItem key={document.id} document={document} />;
           })}
         </ul>
       </section>
       <hr className={"my-4"} />
       <UploadDocument />
     </nav>
+  );
+}
+
+function DocumentItem({ document }: { document: Document }) {
+  return (
+    <li key={document.id}>
+      <Link
+        className={"inline-block underline"}
+        href={`/document/${document.id}`}
+      >
+        {document.originalFileName}
+      </Link>
+      <DeleteDocument documentId={document.id} />
+    </li>
+  );
+}
+
+function DeleteDocument({ documentId }: { documentId: string }) {
+  const router = useRouter();
+
+  const [_, action, isPending] = useActionState(
+    async (_: unknown, formData: FormData) => {
+      await deleteDocumentAction(formData);
+      router.refresh();
+    },
+    undefined,
+  );
+
+  return (
+    <form action={action}>
+      <fieldset>
+        <legend className={"sr-only"}>Delete document {documentId}</legend>
+        <input type="hidden" name="documentId" value={documentId} />
+        <button type="submit" disabled={isPending}>
+          Delete
+        </button>
+      </fieldset>
+    </form>
   );
 }
 

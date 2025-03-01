@@ -232,3 +232,7 @@
   - In addition, **navigating between different routes preserves the state of components within the layout**.
 
     - It _really_ helps, especially when waiting for the documents "ready" status and changing routes at the same time.
+
+- I find it interesting that AWS Step Functions does not have a native integration with S3 for tasks.
+
+  - There is the [`Map` task distributed mode](https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html) that integrates with S3, but you can't invoke a S3 API call natively.
