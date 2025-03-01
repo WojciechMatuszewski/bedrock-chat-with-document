@@ -236,3 +236,19 @@
 - I find it interesting that AWS Step Functions does not have a native integration with S3 for tasks.
 
   - There is the [`Map` task distributed mode](https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html) that integrates with S3, but you can't invoke a S3 API call natively.
+
+- **JSONata in Step Functions**
+
+  - You can't reference variables that you have just defined (in the same "Assign" task)
+
+  - The `resultPath` is no more. You can directly set the output via `Output` property.
+
+    - **This greatly simplifies things!**
+
+- Deleting objects in S3 is quite cumbersome
+
+  - The AWS CLI implements the `--recursive` flag, but there is no such option in the SDK (understandable).
+
+  - To delete multiple objects in S3 via Step Functions, you would be much better off writing AWS Lambda or using Distributed Map.
+
+- Next.js exports the [`Form`](https://nextjs.org/docs/app/api-reference/components/form) component. It seem be to simplifying things then you want to search for something and you hold the state in URL params.

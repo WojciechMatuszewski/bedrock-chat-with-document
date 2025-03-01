@@ -11,6 +11,7 @@ import {
 import { z } from "zod";
 import { chatWithDocumentAction } from "../../lib/actions";
 import { type EventsChannel, events } from "../../lib/amplify";
+import Form from "next/form";
 
 export default function DocumentPage({
   params,
@@ -62,7 +63,7 @@ function DocumentChat({ documentId }: { documentId: string }) {
           })}
         </ul>
       </div>
-      <form
+      <Form
         action={async (formData) => {
           addOptimisticMessage({
             id: crypto.randomUUID(),
@@ -89,7 +90,7 @@ function DocumentChat({ documentId }: { documentId: string }) {
             Submit
           </button>
         </fieldset>
-      </form>
+      </Form>
     </div>
   );
 }

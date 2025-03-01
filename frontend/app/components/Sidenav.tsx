@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { use, useActionState, useEffect, useId, useState } from "react";
 import { DocumentSchema, type ListDocumentsResponse } from "transport";
 import { z } from "zod";
 import { deleteDocumentAction, uploadDocumentAction } from "../lib/actions";
 import { events } from "../lib/amplify";
 import { type Document } from "transport";
+import Form from "next/form";
 
 export function Sidenav({
   documentsPromise,
@@ -17,7 +18,7 @@ export function Sidenav({
   const documents = use(documentsPromise);
 
   return (
-    <nav className={"px-6 py-4 bg-amber-100 h-[100cqh]"}>
+    <nav className={"px-6 py-4 bg-amber-100 h-[100cqh] w-[300px]"}>
       <section>
         <h2>Files</h2>
         <ul>
@@ -48,11 +49,16 @@ function DocumentItem({ document }: { document: Document }) {
 
 function DeleteDocument({ documentId }: { documentId: string }) {
   const router = useRouter();
+  const { documentId: documentIdInParams } = useParams();
 
   const [_, action, isPending] = useActionState(
     async (_: unknown, formData: FormData) => {
       await deleteDocumentAction(formData);
-      router.refresh();
+      if (documentIdInParams === documentId) {
+        router.replace("/");
+      } else {
+        router.refresh();
+      }
     },
     undefined,
   );
@@ -63,7 +69,7 @@ function DeleteDocument({ documentId }: { documentId: string }) {
         <legend className={"sr-only"}>Delete document {documentId}</legend>
         <input type="hidden" name="documentId" value={documentId} />
         <button type="submit" disabled={isPending}>
-          Delete
+          {isPending ? "Deleting..." : "Delete"}
         </button>
       </fieldset>
     </form>
@@ -90,6 +96,7 @@ function UploadDocument() {
     const { documentId } = uploadResult;
 
     setPendingDocumentId(documentId);
+
     waitForDocumentReady({ documentId }).finally(() => {
       setPendingDocumentId(null);
       router.refresh();
@@ -101,7 +108,7 @@ function UploadDocument() {
   const isLoading = pendingDocumentId != null || isPending;
 
   return (
-    <form action={action}>
+    <Form action={action}>
       <fieldset disabled={isLoading}>
         <label
           htmlFor={inputId}
@@ -126,7 +133,7 @@ function UploadDocument() {
           }}
         />
       </fieldset>
-    </form>
+    </Form>
   );
 }
 

@@ -50,6 +50,7 @@ import {
   JsonPath,
   QueryLanguage,
   type StateMachine,
+  StateMachineType,
   TaskInput,
 } from "aws-cdk-lib/aws-stepfunctions";
 import { DynamoAttributeValue } from "aws-cdk-lib/aws-stepfunctions-tasks";
@@ -301,7 +302,7 @@ class DocumentsAPI extends aws_apigatewayv2.HttpApi {
         "DeleteDocumentIntegration",
         {
           stateMachine: deleteDocumentStateMachine,
-          subtype: HttpIntegrationSubtype.STEPFUNCTIONS_START_EXECUTION,
+          subtype: HttpIntegrationSubtype.STEPFUNCTIONS_START_SYNC_EXECUTION,
           parameterMapping: new aws_apigatewayv2.ParameterMapping()
             /**
              * We have to use the `${}` form, since we have multiple brackets in the expression.
@@ -535,18 +536,19 @@ export class DeleteDocumentStateMachine extends aws_stepfunctions.StateMachine {
       knowledgeBase: IKnowledgeBase;
     },
   ) {
-    const deleteDocumentInTable = new aws_stepfunctions_tasks.DynamoDeleteItem(
-      scope,
-      "DeleteDocumentInTable",
-      {
-        key: {
-          id: DynamoAttributeValue.fromString("{% $.documentId %}"),
+    const deleteDocumentInTable =
+      aws_stepfunctions_tasks.DynamoDeleteItem.jsonata(
+        scope,
+        "DeleteDocumentInTable",
+        {
+          key: {
+            id: DynamoAttributeValue.fromString("{% $documentId %}"),
+          },
+          table: documentsTable,
         },
-        table: documentsTable,
-      },
-    );
+      );
 
-    const deleteDocumentInS3 = new aws_stepfunctions_tasks.CallAwsService(
+    const deleteDocumentInS3 = aws_stepfunctions_tasks.CallAwsService.jsonata(
       scope,
       "DeleteDocumentInS3",
       {
@@ -554,15 +556,31 @@ export class DeleteDocumentStateMachine extends aws_stepfunctions.StateMachine {
         action: "deleteObject",
         parameters: {
           Bucket: documentsBucket.bucketName,
-          Key: TaskInput.fromText(""),
+          Key: `{% $documentId & "/data" %}`,
         },
         iamResources: [documentsBucket.arnForObjects("*")],
         iamAction: "s3:DeleteObject",
       },
     );
 
+    const deleteMetadataDocumentInS3 =
+      aws_stepfunctions_tasks.CallAwsService.jsonata(
+        scope,
+        "DeleteMetadataDocumentInS3",
+        {
+          service: "s3",
+          action: "deleteObject",
+          parameters: {
+            Bucket: documentsBucket.bucketName,
+            Key: `{% $documentId & "/data.metadata.json" %}`,
+          },
+          iamResources: [documentsBucket.arnForObjects("*")],
+          iamAction: "s3:DeleteObject",
+        },
+      );
+
     const deleteDocumentInDataSource =
-      new aws_stepfunctions_tasks.CallAwsService(
+      aws_stepfunctions_tasks.CallAwsService.jsonata(
         scope,
         "DeleteDocumentInDatasource",
         {
@@ -575,12 +593,7 @@ export class DeleteDocumentStateMachine extends aws_stepfunctions.StateMachine {
               {
                 DataSourceType: "S3",
                 S3: {
-                  Uri: JsonPath.format(
-                    // "s3://{}/{}.data",
-                    // documentsBucket.bucketName,
-                    // JsonPath.stringAt("$.documentId"),
-                    "",
-                  ),
+                  Uri: `{% "s3://" & $s3DocumentKey %}`,
                 },
               },
             ],
@@ -592,41 +605,49 @@ export class DeleteDocumentStateMachine extends aws_stepfunctions.StateMachine {
               resources: [knowledgeBase.knowledgeBaseArn],
               effect: aws_iam.Effect.ALLOW,
             }),
+            new aws_iam.PolicyStatement({
+              actions: ["bedrock:StartIngestionJob"],
+              resources: [knowledgeBase.knowledgeBaseArn],
+              effect: aws_iam.Effect.ALLOW,
+            }),
+            new aws_iam.PolicyStatement({
+              actions: ["bedrock:AssociateThirdPartyKnowledgeBase"],
+              resources: [knowledgeBase.knowledgeBaseArn],
+              effect: aws_iam.Effect.ALLOW,
+            }),
           ],
-          resultPath: JsonPath.DISCARD,
         },
       );
 
-    // const performOperationsStep = new aws_stepfunctions.Parallel(
-    //   scope,
-    //   "PerformOperations",
-    //   { resultPath: JsonPath.DISCARD },
-    // )
-    //   .branch(deleteDocumentInTable)
-    //   .branch(deleteDocumentInS3)
-    //   .branch(deleteDocumentInDataSource);
+    const performOperationsStep = new aws_stepfunctions.Parallel(
+      scope,
+      "PerformOperations",
+    )
+      .branch(deleteDocumentInTable)
+      .branch(deleteDocumentInS3)
+      .branch(deleteMetadataDocumentInS3)
+      .branch(deleteDocumentInDataSource);
 
     const computeVariablesStep = new aws_stepfunctions.Pass(
       scope,
       "ComputeVariables",
       {
         assign: {
-          bucketName: documentsBucket.bucketName,
-          /**
-           * TODO: We can't reference the `$bucketName` here. It's undefined.
-           */
-          s3DocumentKey: `{% $bucketName & "/" & $states.input.documentId & "/" & "data" %}`,
-          s3DocumentMetadataKey: `{% $bucketName & "/" & $states.input.documentId & "/" & "data.metadata.json" %}`,
+          documentId: "{% $states.input.documentId %}",
+          s3DocumentKey: `{% "${documentsBucket.bucketName}" & "/" & $states.input.documentId & "/" & "data" %}`,
+          s3DocumentMetadataKey: `{% "${documentsBucket.bucketName}" & "/" & $states.input.documentId & "/" & "data.metadata.json" %}`,
         },
       },
     );
 
-    const definitionBody =
-      aws_stepfunctions.DefinitionBody.fromChainable(computeVariablesStep);
+    const definitionBody = aws_stepfunctions.DefinitionBody.fromChainable(
+      computeVariablesStep.next(performOperationsStep),
+    );
 
     super(scope, "DeleteDocumentStateMachine", {
       definitionBody,
       queryLanguage: QueryLanguage.JSONATA,
+      stateMachineType: StateMachineType.EXPRESS,
     });
   }
 }
