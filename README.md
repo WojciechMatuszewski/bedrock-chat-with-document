@@ -1,5 +1,43 @@
 # Chat with Document application built on AWS using Amazon Bedrock
 
+## Deployment
+
+1. Create index in [Pinecone](https://www.pinecone.io/).
+
+2. Create `.env` file in the `backend` directory.
+
+```text
+PINECONE_ENDPOINT_URL="XXXX"
+PINECONE_API_KEY="XXX"
+PINECONE_API_KEY_SECRET_ARN="XXX"
+```
+
+3. Run the boostrap script.
+
+```bash
+pnpm run boostrap
+```
+
+4. Run the deploy script.
+
+```bash
+pnpm run deploy
+```
+
+5. Create `.env.local` file in the `frontend` directory.
+
+```bash
+NEXT_PUBLIC_API_ROOT_URL="XXX"
+NEXT_PUBLIC_APPSYNC_EVENTS_API_URL="XXXX"
+NEXT_PUBLIC_APPSYNC_EVENTS_API_KEY="XXXX"
+```
+
+6. Run the frontend app.
+
+```bash
+pnpm run dev
+```
+
 ## Learnings
 
 - To get the list of files that `eslint` "found", you will need to run `eslint` with the `DEBUG` flag.
